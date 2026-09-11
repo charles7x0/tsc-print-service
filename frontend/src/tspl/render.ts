@@ -18,19 +18,35 @@ export interface RenderInfo {
   scale: number;
 }
 
-export function renderLabel(canvas: HTMLCanvasElement, label: ParsedLabel): RenderInfo {
+export interface RenderOptions {
+  /** Zoom multiplier applied on top of the fit-to-width scale (1 = fit). */
+  zoom?: number;
+}
+
+export function renderLabel(
+  canvas: HTMLCanvasElement,
+  label: ParsedLabel,
+  options: RenderOptions = {},
+): RenderInfo {
   const ctx = canvas.getContext('2d');
   if (!ctx) return { widthDots: 0, heightDots: 0, scale: 1 };
+
+  const zoom = Math.max(0.1, options.zoom ?? 1);
 
   const widthDots = label.size?.widthDots || FALLBACK_W;
   const heightDots = label.size?.heightDots || FALLBACK_H;
 
-  // Fit the label within the canvas's CSS box, preserving aspect ratio.
-  const cssW = canvas.clientWidth || 320;
-  const availW = cssW - PADDING * 2;
-  const scale = Math.max(0.05, availW / widthDots);
+  // Fit the label to the container width at zoom = 1, then apply the zoom on top.
+  // The canvas is measured from its parent so zooming can grow it wider than the
+  // viewport (the parent provides horizontal scroll).
+  const containerW = canvas.parentElement?.clientWidth || canvas.clientWidth || 320;
+  const availW = containerW - PADDING * 2;
+  const fitScale = Math.max(0.05, availW / widthDots);
+  const scale = fitScale * zoom;
 
+  const cssW = widthDots * scale + PADDING * 2;
   const cssH = heightDots * scale + PADDING * 2;
+  canvas.style.width = `${cssW}px`;
 
   // Handle high-DPI displays crisply.
   const dpr = window.devicePixelRatio || 1;

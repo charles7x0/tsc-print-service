@@ -1,35 +1,59 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseTspl } from '../tspl/parse';
 import { renderLabel } from '../tspl/render';
 
 interface Props {
   /** The raw TSPL source to visualise. */
   source: string;
-  /** Dots per mm, used to convert a mm-based SIZE into dots. */
+  /** Dots per mm from settings; used as the initial value for the size selector. */
   dpmm: number;
 }
 
+const DPMM_OPTIONS = [
+  { value: 8, label: '203 dpi (8)' },
+  { value: 11.8, label: '300 dpi (11.8)' },
+  { value: 24, label: '600 dpi (24)' },
+];
+
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 6;
+const ZOOM_STEP = 0.25;
+
 /**
  * Live, approximate preview of a TSPL program drawn on a canvas.
- * Parses SIZE/DIRECTION/TEXT/BARCODE/BAR/BOX and renders element placement.
+ * Parses SIZE/DIRECTION/TEXT/BARCODE/QRCODE/BAR/BOX and renders element placement.
+ * Includes a size (DPMM) selector and zoom controls.
  */
 export function TsplVisualizer({ source, dpmm }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [selectedDpmm, setSelectedDpmm] = useState<number>(dpmm);
+  const [zoom, setZoom] = useState<number>(1);
 
-  const parsed = useMemo(() => parseTspl(source, dpmm), [source, dpmm]);
+  // Keep the selector in sync if the settings dpmm changes.
+  useEffect(() => {
+    setSelectedDpmm(dpmm);
+  }, [dpmm]);
+
+  const parsed = useMemo(() => parseTspl(source, selectedDpmm), [source, selectedDpmm]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const draw = () => renderLabel(canvas, parsed);
+    const draw = () => renderLabel(canvas, parsed, { zoom });
     draw();
 
-    // Redraw on container resize so the preview stays fitted.
+    // Redraw when the container resizes so the fit-to-width baseline stays correct.
+    const target = canvas.parentElement ?? canvas;
     const ro = new ResizeObserver(draw);
-    ro.observe(canvas);
+    ro.observe(target);
     return () => ro.disconnect();
-  }, [parsed]);
+  }, [parsed, zoom]);
+
+  const clampZoom = (z: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+  const zoomOut = () => setZoom((z) => clampZoom(Math.round((z - ZOOM_STEP) * 100) / 100));
+  const zoomIn = () => setZoom((z) => clampZoom(Math.round((z + ZOOM_STEP) * 100) / 100));
+  const resetZoom = () => setZoom(1);
 
   const size = parsed.size;
   const dims = size
@@ -39,6 +63,36 @@ export function TsplVisualizer({ source, dpmm }: Props) {
 
   return (
     <div className="visualizer">
+      <div className="visualizer-controls">
+        <label className="visualizer-control">
+          <span>Size</span>
+          <select
+            value={String(selectedDpmm)}
+            onChange={(e) => setSelectedDpmm(Number(e.target.value))}
+            aria-label="Preview resolution (dots per mm)"
+          >
+            {DPMM_OPTIONS.map((o) => (
+              <option key={o.value} value={String(o.value)}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="visualizer-zoom" role="group" aria-label="Zoom">
+          <button type="button" className="secondary" onClick={zoomOut} disabled={zoom <= ZOOM_MIN} aria-label="Zoom out">
+            −
+          </button>
+          <span className="visualizer-zoom__value">{Math.round(zoom * 100)}%</span>
+          <button type="button" className="secondary" onClick={zoomIn} disabled={zoom >= ZOOM_MAX} aria-label="Zoom in">
+            +
+          </button>
+          <button type="button" className="secondary" onClick={resetZoom} disabled={zoom === 1}>
+            Fit
+          </button>
+        </div>
+      </div>
+
       <div className="visualizer-meta">
         <span>{dims}</span>
         <span>·</span>
@@ -50,7 +104,11 @@ export function TsplVisualizer({ source, dpmm }: Props) {
           </>
         ) : null}
       </div>
-      <canvas ref={canvasRef} className="visualizer-canvas" />
+
+      <div className="visualizer-scroll">
+        <canvas ref={canvasRef} className="visualizer-canvas" />
+      </div>
+
       {parsed.unknown.length > 0 ? (
         <details className="visualizer-unknown">
           <summary>{parsed.unknown.length} line(s) not previewed</summary>
@@ -63,6 +121,7 @@ export function TsplVisualizer({ source, dpmm }: Props) {
           </ul>
         </details>
       ) : null}
+
       <p className="muted visualizer-note">
         Approximate preview. Fonts and barcode encoding won't match the printer;
         placement, size and rotation will.

@@ -368,3 +368,51 @@ button.primary:disabled, button.secondary:disabled { opacity: 0.55; cursor: prog
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+.visualizer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.visualizer-control {
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.visualizer-control select { width: auto; }
+
+.visualizer-zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.visualizer-zoom button.secondary {
+  margin-top: 0;
+  padding: 0.35rem 0.7rem;
+  min-width: 2.2rem;
+}
+.visualizer-zoom__value {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  min-width: 3rem;
+  text-align: center;
+  color: var(--text);
+}
+
+.visualizer-scroll {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inset);
+}
+.visualizer-scroll .visualizer-canvas {
+  border: none;
+  border-radius: 0;
+  width: auto;
+  max-width: none;
+}
