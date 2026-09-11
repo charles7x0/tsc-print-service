@@ -60,7 +60,6 @@ export function App(): JSX.Element {
     <div className="app">
       <header className="app-header">
         <div className="app-header__brand">
-          <span className="app-header__mark" aria-hidden="true">▤</span>
           <div>
             <h1 className="app-header__title">TSC Printer Console</h1>
             <p className="app-header__subtitle">TSPL label control</p>
