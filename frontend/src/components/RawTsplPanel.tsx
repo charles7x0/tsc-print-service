@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, ApiError } from '../api';
 import type { Settings } from '../types';
+import { downloadText, makePrnFilename } from '../download';
 import { Card } from './Card';
 import { TsplVisualizer } from './TsplVisualizer';
 
@@ -22,6 +23,9 @@ export function RawTsplPanel({ settings, onOutput, onStatus }: Props) {
   const [commands, setCommands] = useState(DEFAULT_TSPL);
   const [busy, setBusy] = useState(false);
 
+  const dryRun = settings.printer.dryRun;
+
+  /** Send the TSPL to the server (prints in live mode, downloads in dry-run). */
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -32,7 +36,14 @@ export function RawTsplPanel({ settings, onOutput, onStatus }: Props) {
         .filter(Boolean);
       const data = await api.printRaw(lines);
       onOutput(data);
-      onStatus('Raw TSPL sent.', 'ok');
+      // In dry-run mode, download the generated TSPL rather than saving it
+      // to a folder on the server.
+      if (data.result.mode === 'dry-run') {
+        downloadText(makePrnFilename('raw-label'), data.tspl);
+        onStatus('Dry run — TSPL downloaded.', 'ok');
+      } else {
+        onStatus('Raw TSPL sent to printer.', 'ok');
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : String(err);
       onOutput('Error: ' + message);
@@ -41,6 +52,21 @@ export function RawTsplPanel({ settings, onOutput, onStatus }: Props) {
       setBusy(false);
     }
   }
+
+  /** Download the current TSPL as a .prn file without contacting the server. */
+  function handleDownload() {
+    const content = commands.replace(/\r?\n/g, '\r\n').trimEnd() + '\r\n';
+    downloadText(makePrnFilename('raw-label'), content);
+    onStatus('TSPL downloaded.', 'ok');
+  }
+
+  const primaryLabel = busy
+    ? dryRun
+      ? 'Downloading…'
+      : 'Printing…'
+    : dryRun
+      ? 'Download .prn'
+      : 'Print';
 
   return (
     <Card title="Raw TSPL" description="One command per line. Sent verbatim to the printer.">
@@ -55,9 +81,15 @@ export function RawTsplPanel({ settings, onOutput, onStatus }: Props) {
           value={commands}
           onChange={(e) => setCommands(e.target.value)}
         />
-        <button type="submit" className="primary" disabled={busy}>
-          {busy ? 'Sending…' : 'Send raw TSPL'}
-        </button>
+        <div className="button-row">
+          <button type="submit" className="primary" disabled={busy}>
+            {primaryLabel}
+          </button>
+          {/* Always-available direct download, independent of dry-run/live mode. */}
+          <button type="button" className="secondary" onClick={handleDownload} disabled={busy}>
+            Download .prn
+          </button>
+        </div>
       </form>
 
       <h3 className="visualizer-heading">Preview</h3>
