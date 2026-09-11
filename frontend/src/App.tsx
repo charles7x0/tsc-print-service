@@ -5,34 +5,29 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { TestLabelPanel } from './components/TestLabelPanel';
 import { CustomLabelPanel } from './components/CustomLabelPanel';
 import { RawTsplPanel } from './components/RawTsplPanel';
+import { StatusPill, type ConnectionState } from './components/StatusPill';
 
 type StatusKind = 'ok' | 'err' | '';
 
-export function App() {
+export function App(): JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [status, setStatus] = useState<{ text: string; kind: StatusKind }>({
-    text: 'Connecting…',
-    kind: '',
-  });
-  const [output, setOutput] = useState<string>('No requests yet.');
+  const [connState, setConnState] = useState<ConnectionState>('connecting');
+  const [statusMessage, setStatusMessage] = useState<string>('Reaching the server…');
+  const [output, setOutput] = useState<string>('');
 
   const onStatus = useCallback((text: string, kind: StatusKind) => {
-    setStatus({ text, kind });
+    setStatusMessage(text);
+    if (kind === 'err') setConnState('error');
   }, []);
 
   const onOutput = useCallback((data: unknown) => {
     setOutput(typeof data === 'string' ? data : JSON.stringify(data, null, 2));
   }, []);
 
-  const reflectStatus = useCallback(
-    (s: Settings) => {
-      const mode = s.printer.dryRun
-        ? 'DRY RUN (no hardware)'
-        : `${s.printer.ip}:${s.printer.port}`;
-      onStatus(`Connected · printer: ${mode}`, 'ok');
-    },
-    [onStatus],
-  );
+  const reflectSettings = useCallback((s: Settings) => {
+    setConnState(s.printer.dryRun ? 'dry-run' : 'live');
+    setStatusMessage('');
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,58 +36,81 @@ export function App() {
       .then((s) => {
         if (cancelled) return;
         setSettings(s);
-        reflectStatus(s);
+        reflectSettings(s);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         const message = err instanceof ApiError ? err.message : String(err);
-        onStatus('Could not reach server: ' + message, 'err');
+        setConnState('error');
+        setStatusMessage('Could not reach server: ' + message);
       });
     return () => {
       cancelled = true;
     };
-  }, [onStatus, reflectStatus]);
+  }, [reflectSettings]);
 
   const handleSaved = useCallback(
     (s: Settings) => {
       setSettings(s);
+      reflectSettings(s);
     },
-    [],
+    [reflectSettings],
   );
 
   return (
-    <>
+    <div className="app">
       <header className="app-header">
-        <h1>TSC Printer Console</h1>
-        <p className={`status ${status.kind}`} role="status" aria-live="polite">
-          {status.text}
-        </p>
+        <div className="app-header__brand">
+          <span className="app-header__mark" aria-hidden="true">▤</span>
+          <div>
+            <h1 className="app-header__title">TSC Printer Console</h1>
+            <p className="app-header__subtitle">TSPL label control</p>
+          </div>
+        </div>
+        <StatusPill state={connState} settings={settings} message={statusMessage} />
       </header>
 
-      <main className="layout">
-        {settings ? (
-          <>
+      {settings ? (
+        <div className="app-body">
+          {/* Configuration lives in a distinct sidebar column. */}
+          <aside className="app-sidebar" aria-label="Configuration">
             <SettingsPanel
               settings={settings}
               onSaved={handleSaved}
               onOutput={onOutput}
               onStatus={onStatus}
             />
-            <TestLabelPanel onOutput={onOutput} onStatus={onStatus} />
-            <CustomLabelPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
-            <RawTsplPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
-          </>
-        ) : (
-          <section className="card">
-            <p className="muted">Loading settings…</p>
-          </section>
-        )}
+          </aside>
 
-        <section className="card output" aria-labelledby="output-heading">
-          <h2 id="output-heading">Last response</h2>
-          <pre aria-live="polite">{output}</pre>
-        </section>
-      </main>
-    </>
+          {/* Operator actions grouped together, with a sticky results rail. */}
+          <main className="app-main">
+            <div className="action-grid">
+              <TestLabelPanel onOutput={onOutput} onStatus={onStatus} />
+              <CustomLabelPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
+              <RawTsplPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
+            </div>
+
+            <aside className="results-rail" aria-label="Last response">
+              <div className="card output">
+                <h2>Last response</h2>
+                {output ? (
+                  <pre aria-live="polite">{output}</pre>
+                ) : (
+                  <p className="muted empty-state">
+                    Responses from print and settings actions appear here.
+                  </p>
+                )}
+              </div>
+            </aside>
+          </main>
+        </div>
+      ) : (
+        <div className="app-loading">
+          <div className="card">
+            <p className="muted">{statusMessage || 'Loading settings…'}</p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
