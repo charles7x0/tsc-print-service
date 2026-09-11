@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from './api';
 import type { Settings } from './types';
 import { SettingsPanel } from './components/SettingsPanel';
-import { TestLabelPanel } from './components/TestLabelPanel';
 import { CustomLabelPanel } from './components/CustomLabelPanel';
 import { RawTsplPanel } from './components/RawTsplPanel';
 import { StatusPill, type ConnectionState } from './components/StatusPill';
@@ -85,7 +84,6 @@ export function App(): JSX.Element {
           {/* Operator actions grouped together, with a sticky results rail. */}
           <main className="app-main">
             <div className="action-grid">
-              <TestLabelPanel onOutput={onOutput} onStatus={onStatus} />
               <CustomLabelPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
               <RawTsplPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
             </div>
