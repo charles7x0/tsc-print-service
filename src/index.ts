@@ -16,7 +16,7 @@ function main(): void {
     const { host, port } = config.http;
     const printer = settings.getSettings().printer;
     const mode = printer.dryRun
-      ? `DRY RUN (writing to ${printer.dryRunFile})`
+      ? 'DRY RUN (TSPL returned to client, not saved)'
       : `network (${printer.ip}:${printer.port})`;
     // eslint-disable-next-line no-console
     console.log(`TSC printer server listening on http://${host}:${port}`);

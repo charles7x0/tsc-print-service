@@ -110,7 +110,9 @@ export function SettingsPanel({ settings, onSaved, onOutput, onStatus }: Setting
           </Fieldset>
         ) : (
           <Fieldset legend="Dry-run output">
-            <TextField label="File path" value={printer.dryRunFile} onChange={(v) => patchPrinter({ dryRunFile: v })} placeholder="./output/label.prn" />
+            <p className="muted">
+              The generated TSPL is downloaded to your browser as a .prn file. Nothing is sent to a printer.
+            </p>
           </Fieldset>
         )}
 

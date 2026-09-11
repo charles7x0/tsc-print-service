@@ -11,7 +11,6 @@ export const settingsSchema = z.object({
     port: z.number().int().positive(),
     timeoutMs: z.number().int().positive(),
     dryRun: z.boolean(),
-    dryRunFile: z.string().min(1),
   }),
   label: z.object({
     widthMm: z.number().positive(),
@@ -37,7 +36,6 @@ export const settingsUpdateSchema = z
         port: z.number().int().positive(),
         timeoutMs: z.number().int().positive(),
         dryRun: z.boolean(),
-        dryRunFile: z.string().min(1),
       })
       .partial(),
     label: z
@@ -62,7 +60,6 @@ export const DEFAULT_SETTINGS: Settings = {
     port: 9100,
     timeoutMs: 5000,
     dryRun: true,
-    dryRunFile: './output/label.prn',
   },
   label: {
     widthMm: 45,

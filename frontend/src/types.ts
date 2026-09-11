@@ -6,7 +6,6 @@ export interface PrinterSettings {
   port: number;
   timeoutMs: number;
   dryRun: boolean;
-  dryRunFile: string;
 }
 
 export interface LabelSettings {
@@ -26,7 +25,6 @@ export interface Settings {
 export interface SendResult {
   mode: 'network' | 'dry-run';
   bytesSent: number;
-  file?: string;
   target?: { ip: string; port: number };
 }
 

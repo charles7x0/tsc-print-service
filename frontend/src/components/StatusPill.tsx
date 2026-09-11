@@ -23,8 +23,8 @@ export function StatusPill({ state, settings, message }: StatusPillProps): JSX.E
   const detail =
     state === 'live' && settings
       ? `${settings.printer.ip}:${settings.printer.port}`
-      : state === 'dry-run' && settings
-        ? settings.printer.dryRunFile
+      : state === 'dry-run'
+        ? 'TSPL downloaded to browser'
         : message ?? '';
 
   return (

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import type { Rotation, Settings } from '../types';
+import { downloadText, makePrnFilename } from '../download';
 import { Card } from './Card';
 import { Fieldset, NumberField, SelectField, TextField } from './Field';
 
@@ -59,7 +60,14 @@ export function CustomLabelPanel({ settings, onOutput, onStatus }: Props) {
         copies: 1,
       });
       onOutput(data);
-      onStatus('Custom label sent.', 'ok');
+      // In dry-run mode, download the generated TSPL instead of it being
+      // saved to a folder on the server.
+      if (data.result.mode === 'dry-run') {
+        downloadText(makePrnFilename('custom-label'), data.tspl);
+        onStatus('Dry run — TSPL downloaded.', 'ok');
+      } else {
+        onStatus('Custom label sent.', 'ok');
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : String(err);
       onOutput('Error: ' + message);

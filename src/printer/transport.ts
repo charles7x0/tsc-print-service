@@ -1,6 +1,4 @@
 import { Socket } from 'node:net';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
 
 export interface PrinterTarget {
   ip: string;
@@ -11,8 +9,6 @@ export interface PrinterTarget {
 export interface SendResult {
   mode: 'network' | 'dry-run';
   bytesSent: number;
-  /** Present in dry-run mode: the file the TSPL was written to. */
-  file?: string;
   /** Present in network mode. */
   target?: { ip: string; port: number };
 }
@@ -128,20 +124,16 @@ export class NetworkTransport implements PrinterTransport {
 }
 
 /**
- * Writes TSPL to a file instead of sending it to a printer. Used when
- * DRY_RUN=true so the layout can be tested with no hardware.
+ * Dry-run transport: does NOT send to a printer and does NOT write to disk.
+ * The generated TSPL is returned to the caller (the HTTP response includes it),
+ * so the web UI can offer it to the user as a download instead of the server
+ * persisting a file. Used when the printer's dryRun setting is enabled.
  */
 export class DryRunTransport implements PrinterTransport {
-  constructor(private readonly filePath: string) {}
-
   async send(tspl: string): Promise<SendResult> {
-    const abs = resolve(this.filePath);
-    await mkdir(dirname(abs), { recursive: true });
-    await writeFile(abs, tspl, 'utf8');
     return {
       mode: 'dry-run',
       bytesSent: Buffer.byteLength(tspl, 'utf8'),
-      file: abs,
     };
   }
 }
