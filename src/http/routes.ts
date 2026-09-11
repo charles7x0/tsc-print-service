@@ -2,11 +2,19 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { PrinterService } from '../printer/service.js';
 import type { SettingsRepository } from '../db/settingsRepository.js';
+import {
+  TemplateRegistry,
+  UnknownTemplateError,
+  TemplateValidationError,
+  type RenderContext,
+} from '../templates/index.js';
+import { buildLabel } from '../tspl/builder.js';
 import { settingsUpdateSchema } from '../db/settings.js';
 import {
   printDefectTagSchema,
   printLabelSchema,
   printRawSchema,
+  printSchema,
   printTestSchema,
   testConnectionSchema,
 } from './schemas.js';
@@ -46,58 +54,119 @@ function parseBody<T>(
 export function createRoutes(
   service: PrinterService,
   settings: SettingsRepository,
+  registry: TemplateRegistry,
 ): Router {
   const router = Router();
 
-  // Health check — useful for container orchestration and the frontend.
+  // ---- Utility / settings endpoints ----------------------------------------
+
   router.get('/health', (_req, res) => {
     res.json({ status: 'ok', dryRun: settings.getSettings().printer.dryRun });
   });
 
-  // Expose current settings so the frontend can show defaults.
-  // The printer IP is included; there are no secrets in this config.
   router.get('/config', (_req, res) => {
     const s = settings.getSettings();
     res.json({
-      printer: {
-        ip: s.printer.ip,
-        port: s.printer.port,
-        dryRun: s.printer.dryRun,
-      },
+      printer: { ip: s.printer.ip, port: s.printer.port, dryRun: s.printer.dryRun },
       label: s.label,
     });
   });
 
-  // Read the full settings object.
   router.get('/settings', (_req, res) => {
     res.json(settings.getSettings());
   });
 
-  // Update settings (partial patch). Returns the new full settings.
-  router.put(
-    '/settings',
-    (req, res) => {
-      const body = parseBody(settingsUpdateSchema, req, res);
-      if (!body) return;
-      const updated = settings.updateSettings(body);
-      res.json({ ok: true, settings: updated });
-    },
-  );
+  router.put('/settings', (req, res) => {
+    const body = parseBody(settingsUpdateSchema, req, res);
+    if (!body) return;
+    const updated = settings.updateSettings(body);
+    res.json({ ok: true, settings: updated });
+  });
 
-  // Test whether the printer is reachable (TCP probe, no data sent).
-  // Accepts an optional { ip, port, timeoutMs } override to test before saving.
   router.post(
     '/test-connection',
     asyncHandler(async (req, res) => {
       const body = parseBody(testConnectionSchema, req, res);
       if (!body) return;
       const result = await service.testConnection(body);
-      // Always 200: the probe result itself reports reachable true/false.
       res.json(result);
     }),
   );
 
-  // Print the built-in demo/test label.
+  // ---- Template discovery ---------------------------------------------------
+
+  /** List all available print templates and their data schemas. */
+  router.get('/templates', (_req, res) => {
+    res.json(registry.list());
+  });
+
+  // ---- Unified template-driven print endpoint -------------------------------
+
+  /**
+   * POST /api/print — the canonical way to print.
+   *
+   * Flow:
+   *   1. Look up template by name                     → 404 if unknown
+   *   2. Validate `data` against the template's schema → 400 with field errors
+   *   3. Resolve geometry + dpmm from settings
+   *   4. template.render(data, context) → LabelSpec
+   *   5. buildLabel(spec)               → TSPL string
+   *   6. Send to printer or return for download (dry-run)
+   */
+  router.post(
+    '/print',
+    asyncHandler(async (req, res) => {
+      const body = parseBody(printSchema, req, res);
+      if (!body) return;
+
+      const s = settings.getSettings();
+
+      // 1. Resolve the render context from saved printer/label settings.
+      const context: RenderContext = {
+        geometry: {
+          widthMm: s.label.widthMm,
+          heightMm: s.label.heightMm,
+          gapMm: s.label.gapMm,
+          direction: s.label.direction,
+          mirror: s.label.mirror,
+        },
+        dpmm: s.label.dpmm,
+      };
+
+      // 2–4. Look up, validate, render.
+      let tspl: string;
+      try {
+        const spec = registry.render(body.template, body.data, context);
+        spec.copies = body.copies ?? 1;
+        tspl = buildLabel(spec);
+      } catch (err) {
+        if (err instanceof UnknownTemplateError) {
+          res.status(404).json({
+            error: 'UnknownTemplate',
+            template: err.templateName,
+            available: registry.list().map((t) => t.name),
+          });
+          return;
+        }
+        if (err instanceof TemplateValidationError) {
+          res.status(400).json({
+            error: 'TemplateValidationError',
+            template: err.templateName,
+            issues: err.issues,
+          });
+          return;
+        }
+        throw err;
+      }
+
+      // 5–6. Send.
+      const result = await service.sendTspl(tspl);
+      res.json({ ok: true, template: body.template, result, tspl });
+    }),
+  );
+
+  // ---- Legacy endpoints (backward compatibility) ----------------------------
+
   router.post(
     '/print/test',
     asyncHandler(async (req, res) => {
@@ -108,7 +177,6 @@ export function createRoutes(
     }),
   );
 
-  // Print a fully specified label.
   router.post(
     '/print/label',
     asyncHandler(async (req, res) => {
@@ -124,7 +192,6 @@ export function createRoutes(
     }),
   );
 
-  // Print the parameterized Defect Analysis Tag.
   router.post(
     '/print/defect-tag',
     asyncHandler(async (req, res) => {
@@ -135,7 +202,6 @@ export function createRoutes(
     }),
   );
 
-  // Print raw TSPL command lines.
   router.post(
     '/print/raw',
     asyncHandler(async (req, res) => {

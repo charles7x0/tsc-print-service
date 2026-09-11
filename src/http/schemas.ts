@@ -85,6 +85,17 @@ export const printDefectTagSchema = z.object({
 });
 
 /**
+ * POST /api/print — the unified template-driven print endpoint.
+ * `template` selects the layout, `data` is validated against the template's
+ * own schema. Copies default to 1.
+ */
+export const printSchema = z.object({
+  template: z.string().min(1),
+  copies: z.number().int().positive().max(999).default(1),
+  data: z.record(z.unknown()),
+});
+
+/**
  * POST /api/test-connection — optional target override. When fields are
  * omitted, the saved settings are used. Lets the UI test before saving.
  */
@@ -100,4 +111,5 @@ export type PrintLabelBody = z.infer<typeof printLabelSchema>;
 export type PrintRawBody = z.infer<typeof printRawSchema>;
 export type PrintTestBody = z.infer<typeof printTestSchema>;
 export type PrintDefectTagBody = z.infer<typeof printDefectTagSchema>;
+export type PrintBody = z.infer<typeof printSchema>;
 export type TestConnectionBody = z.infer<typeof testConnectionSchema>;

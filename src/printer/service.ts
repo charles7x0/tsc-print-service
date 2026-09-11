@@ -51,6 +51,11 @@ export class PrinterService {
     };
   }
 
+  /** Send a pre-built TSPL string through the transport (used by the unified print route). */
+  async sendTspl(tspl: string): Promise<SendResult> {
+    return this.transportFor(this.settings.getSettings()).send(tspl);
+  }
+
   /** Send a fully-specified label. */
   async printLabel(spec: LabelSpec): Promise<{ result: SendResult; tspl: string }> {
     const tspl = buildLabel(spec);
