@@ -42,6 +42,16 @@ export interface BarcodeItem {
   content: string;
 }
 
+export interface QrcodeItem {
+  kind: 'qrcode';
+  x: number;
+  y: number;
+  /** Cell/module width in dots. */
+  cellWidth: number;
+  rotation: Rotation;
+  content: string;
+}
+
 export interface BoxItem {
   kind: 'box';
   x: number;
@@ -59,7 +69,7 @@ export interface BarItem {
   height: number;
 }
 
-export type LabelItem = TextItem | BarcodeItem | BoxItem | BarItem;
+export type LabelItem = TextItem | BarcodeItem | QrcodeItem | BoxItem | BarItem;
 
 export interface ParsedLabel {
   size: LabelSize | null;
@@ -205,6 +215,21 @@ export function parseTspl(source: string, dpmm: number = DEFAULT_DPMM): ParsedLa
           narrow: num(a[6], 2),
           wide: num(a[7], 2),
           content: unquote(a[8] ?? '""'),
+        });
+        break;
+      }
+      case 'QRCODE': {
+        const a = splitArgs(rest);
+        // QRCODE x,y,ECC,cell,mode,rotation,[model,mask,]"content"
+        // The content is always the last argument; cell width is arg index 3.
+        const content = unquote(a[a.length - 1] ?? '""');
+        result.items.push({
+          kind: 'qrcode',
+          x: num(a[0]),
+          y: num(a[1]),
+          cellWidth: num(a[3], 4),
+          rotation: toRotation(num(a[5])),
+          content,
         });
         break;
       }

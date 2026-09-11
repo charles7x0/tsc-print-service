@@ -1,4 +1,4 @@
-import type { BarcodeItem, LabelItem, ParsedLabel, TextItem } from './parse';
+import type { BarcodeItem, LabelItem, ParsedLabel, QrcodeItem, TextItem } from './parse';
 
 /**
  * Render an approximate preview of a parsed TSPL label onto a canvas.
@@ -82,6 +82,9 @@ function drawItem(ctx: CanvasRenderingContext2D, item: LabelItem) {
     case 'barcode':
       drawBarcode(ctx, item);
       break;
+    case 'qrcode':
+      drawQrcode(ctx, item);
+      break;
     case 'bar':
       ctx.fillRect(item.x, item.y, item.width, item.height);
       break;
@@ -160,6 +163,55 @@ function drawBarcode(ctx: CanvasRenderingContext2D, item: BarcodeItem) {
     ctx.font = '18px ui-monospace, Consolas, monospace';
     ctx.textBaseline = 'bottom';
     ctx.fillText(item.content, 0, -2);
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Draw a QR code placeholder. This is NOT a real QR encoder — it renders a
+ * finder-pattern-style square that occupies the SAME footprint the printer will
+ * use, so the preview reveals collisions with nearby elements. The footprint is
+ * approximated as ~25 modules wide (a common QR version), each `cellWidth` dots.
+ */
+function drawQrcode(ctx: CanvasRenderingContext2D, item: QrcodeItem) {
+  ctx.save();
+  applyRotation(ctx, item.x, item.y, item.rotation);
+
+  const cell = Math.max(1, item.cellWidth);
+  const modules = 25; // approximate footprint in modules
+  const size = cell * modules;
+
+  ctx.fillStyle = '#111827';
+  // Outer quiet-zone border so the block reads as a QR code.
+  ctx.strokeStyle = '#111827';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, size, size);
+
+  // Three finder patterns (corners).
+  const finder = cell * 7;
+  const drawFinder = (fx: number, fy: number) => {
+    ctx.fillRect(fx, fy, finder, finder);
+    ctx.clearRect(fx + cell, fy + cell, finder - 2 * cell, finder - 2 * cell);
+    ctx.fillRect(fx + 2 * cell, fy + 2 * cell, finder - 4 * cell, finder - 4 * cell);
+  };
+  drawFinder(0, 0);
+  drawFinder(size - finder, 0);
+  drawFinder(0, size - finder);
+
+  // Sparse module fill in the data area so it visually reads as a QR.
+  const chars = (item.content || '0').split('');
+  for (let r = 0; r < modules; r++) {
+    for (let c = 0; c < modules; c++) {
+      // Skip the finder regions.
+      const inFinder =
+        (r < 8 && c < 8) || (r < 8 && c >= modules - 8) || (r >= modules - 8 && c < 8);
+      if (inFinder) continue;
+      const code = chars[(r * modules + c) % Math.max(1, chars.length)]?.charCodeAt(0) ?? 0;
+      if ((code + r * 3 + c * 7) % 2 === 0) {
+        ctx.fillRect(c * cell, r * cell, cell, cell);
+      }
+    }
   }
 
   ctx.restore();
