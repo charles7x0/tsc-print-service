@@ -56,13 +56,54 @@ export interface BarcodeElement {
   content: string;
 }
 
+/** 2D QR code drawn with the TSPL QRCODE command. */
+export interface QrcodeElement {
+  kind: 'qrcode';
+  x: number;
+  y: number;
+  /** Error-correction level: L, M, Q, H. */
+  ecc: 'L' | 'M' | 'Q' | 'H';
+  /** Cell/module width in dots (1-10). */
+  cellWidth: number;
+  rotation: Rotation;
+  content: string;
+}
+
+/** A solid filled rectangle drawn with the TSPL BAR command. */
+export interface BarElement {
+  kind: 'bar';
+  x: number;
+  y: number;
+  /** Width in dots. */
+  width: number;
+  /** Height in dots. */
+  height: number;
+}
+
+/** A rectangle outline drawn with the TSPL BOX command. */
+export interface BoxElement {
+  kind: 'box';
+  x: number;
+  y: number;
+  xEnd: number;
+  yEnd: number;
+  /** Line thickness in dots. */
+  thickness: number;
+}
+
 /** A raw TSPL command passed straight through (advanced/escape hatch). */
 export interface RawElement {
   kind: 'raw';
   command: string;
 }
 
-export type LabelElement = TextElement | BarcodeElement | RawElement;
+export type LabelElement =
+  | TextElement
+  | BarcodeElement
+  | QrcodeElement
+  | BarElement
+  | BoxElement
+  | RawElement;
 
 /** A complete label: geometry + the elements to draw + copies. */
 export interface LabelSpec {

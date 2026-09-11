@@ -11,7 +11,7 @@ class FakeTransport implements PrinterTransport {
   public lastTspl = '';
   async send(tspl: string): Promise<SendResult> {
     this.lastTspl = tspl;
-    return { mode: 'dry-run', bytesSent: Buffer.byteLength(tspl), file: 'fake.prn' };
+    return { mode: 'dry-run', bytesSent: Buffer.byteLength(tspl) };
   }
 }
 
@@ -118,6 +118,32 @@ describe('HTTP API', () => {
       });
     expect(res.status).toBe(200);
     expect(fake.lastTspl).toContain('TEXT 60,30,"3",90,1,1,"Hello"');
+  });
+
+  it('POST /api/print/defect-tag builds a tag and returns TSPL', async () => {
+    const res = await request(app)
+      .post('/api/print/defect-tag')
+      .send({
+        id: 'AGM24V_LINE2',
+        timestamp: '11/09/2026 10:15:32',
+        gauges: [
+          { label: 'TCA', value: 84 },
+          { label: 'CM', value: 12.3 },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.tspl).toContain('SIZE 45 mm,75 mm');
+    expect(res.body.tspl).toContain('QRCODE');
+    expect(fake.lastTspl).toContain('"TCA"');
+  });
+
+  it('POST /api/print/defect-tag validates the body', async () => {
+    const res = await request(app)
+      .post('/api/print/defect-tag')
+      .send({ id: 'X', timestamp: 't', gauges: [] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('ValidationError');
   });
 
   it('POST /api/test-connection reports unreachable for a bad target', async () => {

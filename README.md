@@ -149,9 +149,10 @@ Open <http://localhost:5173>. The Vite dev server proxies `/api` to the API
 server, so both hot-reload independently.
 
 On first run the server creates `./data/settings.db` and seeds default settings,
-including `dryRun = true` — so nothing needs a printer and prints are written to
-`output/label.prn`. To print for real, turn off dry-run and set the printer IP
-via the settings API (or the web UI):
+including `dryRun = true` — so nothing needs a printer. In dry-run the generated
+TSPL is returned in the API response and the web UI downloads it as a `.prn`
+file (nothing is saved on the server). To print for real, turn off dry-run and
+set the printer IP via the settings API (or the web UI):
 
 ```bash
 curl -X PUT http://localhost:8080/api/settings \
@@ -193,8 +194,7 @@ hand-edited database surfaces a clear error rather than misbehaving.
 | `printer.ip` | `192.168.0.50` | Printer IP address |
 | `printer.port` | `9100` | Raw TSPL port (standard for TSC network printers) |
 | `printer.timeoutMs` | `5000` | Socket connect/write timeout |
-| `printer.dryRun` | `true` | `true` writes TSPL to a file instead of printing |
-| `printer.dryRunFile` | `./output/label.prn` | Where dry-run output is written |
+| `printer.dryRun` | `true` | `true` returns TSPL to the client (downloaded by the UI) instead of sending to a printer |
 | `label.widthMm` | `45` | Default label width (mm) |
 | `label.heightMm` | `75` | Default label height (mm) |
 | `label.gapMm` | `3` | Gap between labels (mm) |
@@ -253,7 +253,7 @@ to populate its forms.)
 The full current settings object:
 ```json
 {
-  "printer": { "ip": "192.168.0.50", "port": 9100, "timeoutMs": 5000, "dryRun": true, "dryRunFile": "./output/label.prn" },
+  "printer": { "ip": "192.168.0.50", "port": 9100, "timeoutMs": 5000, "dryRun": true },
   "label": { "widthMm": 45, "heightMm": 75, "gapMm": 3, "direction": 0, "mirror": 0, "dpmm": 8 }
 }
 ```
@@ -290,6 +290,30 @@ Element kinds: `text`, `barcode`, and `raw` (`{ "kind": "raw", "command": "DENSI
 Send raw TSPL command lines verbatim.
 ```json
 { "commands": ["SIZE 45 mm,75 mm", "GAP 3 mm,0 mm", "CLS", "PRINT 1,1"] }
+```
+
+### `POST /api/print/defect-tag`
+Print the parameterized **Defect Analysis Tag**. All coordinates are computed
+from the current label geometry and DPI (`label.dpmm`), so the layout scales to
+any label size and cannot overflow or collide — a header (QR + id + timestamp),
+one full-width proportional gauge per row, and a footer. Gauge fills are clamped
+to their `max` (default 100).
+```json
+{
+  "id": "AGM24V_LINE2",
+  "timestamp": "11/09/2026 10:15:32",
+  "gauges": [
+    { "label": "TCA", "value": 84 },
+    { "label": "TCF", "value": 62 },
+    { "label": "TCAR", "value": 93 },
+    { "label": "IMP", "value": 45 },
+    { "label": "TAX", "value": 78 },
+    { "label": "CM", "value": 12.3, "max": 100 }
+  ],
+  "qrData": "AGM24V_LINE2",
+  "footer": "Defect Analysis Tag",
+  "direction": 0
+}
 ```
 
 ### Examples
@@ -432,7 +456,7 @@ Dockerfile             # multi-stage, multi-arch container build
 | Prints come out upside down | Set `label.direction` to `1` via `PUT /api/settings`. |
 | Content clipped off the edge | Coordinates exceed the label. Check `label.dpmm` matches your DPI (203 vs 300). |
 | Barcode missing | Its `x`/`y` (plus rotated height) fall outside the printable area — pull it in. |
-| Nothing prints but no error | `printer.dryRun` is `true` — output went to `output/label.prn`. Set it to `false`. |
+| Nothing prints but no error | `printer.dryRun` is `true` — the TSPL was downloaded as a `.prn` file instead of sent. Set it to `false`. |
 | Settings look wrong / corrupted | Stop the server and delete `./data/settings.db`; defaults are reseeded on start. |
 | Server exits at startup | `PORT`/`HOST` is invalid; the error message names the offending variable. |
 

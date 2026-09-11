@@ -68,6 +68,22 @@ export const printTestSchema = z.object({
   landscape: z.boolean().default(true),
 });
 
+const gaugeSchema = z.object({
+  label: z.string().min(1),
+  value: z.number().finite(),
+  max: z.number().positive().optional(),
+});
+
+/** POST /api/print/defect-tag — the parameterized Defect Analysis Tag. */
+export const printDefectTagSchema = z.object({
+  id: z.string().min(1),
+  timestamp: z.string().min(1),
+  gauges: z.array(gaugeSchema).min(1).max(12),
+  qrData: z.string().min(1).optional(),
+  footer: z.string().optional(),
+  direction: z.union([z.literal(0), z.literal(1)]).optional(),
+});
+
 /**
  * POST /api/test-connection — optional target override. When fields are
  * omitted, the saved settings are used. Lets the UI test before saving.
@@ -83,4 +99,5 @@ export const testConnectionSchema = z
 export type PrintLabelBody = z.infer<typeof printLabelSchema>;
 export type PrintRawBody = z.infer<typeof printRawSchema>;
 export type PrintTestBody = z.infer<typeof printTestSchema>;
+export type PrintDefectTagBody = z.infer<typeof printDefectTagSchema>;
 export type TestConnectionBody = z.infer<typeof testConnectionSchema>;

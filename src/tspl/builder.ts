@@ -1,7 +1,10 @@
 import type {
   BarcodeElement,
+  BarElement,
+  BoxElement,
   LabelElement,
   LabelSpec,
+  QrcodeElement,
   RawElement,
   TextElement,
 } from './types.js';
@@ -35,6 +38,20 @@ function renderBarcode(el: BarcodeElement): string {
   return `BARCODE ${el.x},${el.y},"${el.type}",${el.height},${el.readable},${el.rotation},${el.narrow},${el.wide},"${content}"`;
 }
 
+function renderQrcode(el: QrcodeElement): string {
+  const content = escapeTsplString(el.content);
+  // QRCODE x,y,ECC,cell,mode,rotation,"content" (mode A = auto).
+  return `QRCODE ${el.x},${el.y},${el.ecc},${el.cellWidth},A,${el.rotation},"${content}"`;
+}
+
+function renderBar(el: BarElement): string {
+  return `BAR ${el.x},${el.y},${el.width},${el.height}`;
+}
+
+function renderBox(el: BoxElement): string {
+  return `BOX ${el.x},${el.y},${el.xEnd},${el.yEnd},${el.thickness}`;
+}
+
 function renderRaw(el: RawElement): string {
   return el.command.trim();
 }
@@ -45,6 +62,12 @@ function renderElement(el: LabelElement): string {
       return renderText(el);
     case 'barcode':
       return renderBarcode(el);
+    case 'qrcode':
+      return renderQrcode(el);
+    case 'bar':
+      return renderBar(el);
+    case 'box':
+      return renderBox(el);
     case 'raw':
       return renderRaw(el);
     default: {

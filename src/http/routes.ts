@@ -4,6 +4,7 @@ import type { PrinterService } from '../printer/service.js';
 import type { SettingsRepository } from '../db/settingsRepository.js';
 import { settingsUpdateSchema } from '../db/settings.js';
 import {
+  printDefectTagSchema,
   printLabelSchema,
   printRawSchema,
   printTestSchema,
@@ -119,6 +120,17 @@ export function createRoutes(
         quantity: body.quantity ?? 1,
         copies: body.copies ?? 1,
       });
+      res.json({ ok: true, result, tspl });
+    }),
+  );
+
+  // Print the parameterized Defect Analysis Tag.
+  router.post(
+    '/print/defect-tag',
+    asyncHandler(async (req, res) => {
+      const body = parseBody(printDefectTagSchema, req, res);
+      if (!body) return;
+      const { result, tspl } = await service.printDefectTag(body);
       res.json({ ok: true, result, tspl });
     }),
   );
