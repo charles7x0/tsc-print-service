@@ -80,7 +80,7 @@ export function App() {
             />
             <TestLabelPanel onOutput={onOutput} onStatus={onStatus} />
             <CustomLabelPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
-            <RawTsplPanel onOutput={onOutput} onStatus={onStatus} />
+            <RawTsplPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
           </>
         ) : (
           <section className="card">

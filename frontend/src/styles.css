@@ -163,3 +163,47 @@ button.secondary:disabled { opacity: 0.6; cursor: progress; }
 }
 .conn-result.ok { color: var(--ok); }
 .conn-result.err { color: var(--err); }
+
+.visualizer-heading {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.visualizer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.visualizer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.visualizer-canvas {
+  width: 100%;
+  background:
+    linear-gradient(45deg, #0b1220 25%, transparent 25%),
+    linear-gradient(-45deg, #0b1220 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #0b1220 75%),
+    linear-gradient(-45deg, transparent 75%, #0b1220 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  display: block;
+}
+
+.visualizer-unknown {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.visualizer-unknown summary { cursor: pointer; }
+.visualizer-unknown ul { margin: 0.4rem 0 0; padding-left: 1.1rem; }
+.visualizer-unknown code { color: var(--text); }
+
+.visualizer-note { margin: 0; font-size: 0.78rem; }
