@@ -30,6 +30,15 @@ export function openDatabase(dbFile: string = DEFAULT_DB_FILE): Database.Databas
       value   TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS templates (
+      name        TEXT PRIMARY KEY,
+      description TEXT NOT NULL DEFAULT '',
+      source      TEXT NOT NULL,
+      variables   TEXT NOT NULL DEFAULT '[]',
+      geometry    TEXT NOT NULL,
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   return db;
