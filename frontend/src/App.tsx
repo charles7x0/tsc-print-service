@@ -1,26 +1,43 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from './api';
-import type { Settings } from './types';
+import type { Settings, ViewId } from './types';
 import { SettingsPanel } from './components/SettingsPanel';
 import { CustomLabelPanel } from './components/CustomLabelPanel';
 import { RawTsplPanel } from './components/RawTsplPanel';
+import { TemplatesPanel } from './components/TemplatesPanel';
+import { PrintPanel } from './components/PrintPanel';
+import { NavBar } from './components/NavBar';
+import { TsplVisualizer } from './components/TsplVisualizer';
 import { StatusPill, type ConnectionState } from './components/StatusPill';
 
 type StatusKind = 'ok' | 'err' | '';
+
+/** Shared preview payload lifted to the app so it can render in the right rail. */
+export interface PreviewState {
+  source: string;
+  dpmm: number;
+}
 
 export function App(): JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [connState, setConnState] = useState<ConnectionState>('connecting');
   const [statusMessage, setStatusMessage] = useState<string>('Reaching the server…');
-  const [output, setOutput] = useState<string>('');
+  const [view, setView] = useState<ViewId>('print');
+  const [preview, setPreview] = useState<PreviewState>({ source: '', dpmm: 8 });
+
+  const onPreview = useCallback((source: string, dpmm: number) => {
+    setPreview({ source, dpmm });
+  }, []);
 
   const onStatus = useCallback((text: string, kind: StatusKind) => {
     setStatusMessage(text);
     if (kind === 'err') setConnState('error');
   }, []);
 
-  const onOutput = useCallback((data: unknown) => {
-    setOutput(typeof data === 'string' ? data : JSON.stringify(data, null, 2));
+  // The raw response is no longer surfaced in the UI; status messages convey
+  // success/errors. Kept as a no-op so panels can call it without changes.
+  const onOutput = useCallback((_data: unknown) => {
+    /* intentionally not displayed */
   }, []);
 
   const reflectSettings = useCallback((s: Settings) => {
@@ -69,38 +86,81 @@ export function App(): JSX.Element {
       </header>
 
       {settings ? (
-        <div className="app-body">
-          {/* Configuration lives in a distinct sidebar column. */}
-          <aside className="app-sidebar" aria-label="Configuration">
-            <SettingsPanel
-              settings={settings}
-              onSaved={handleSaved}
-              onOutput={onOutput}
-              onStatus={onStatus}
-            />
-          </aside>
+        <>
+          <NavBar active={view} onSelect={setView} />
 
-          {/* Operator actions grouped together, with a sticky results rail. */}
-          <main className="app-main">
-            <div className="action-grid">
-              <CustomLabelPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
-              <RawTsplPanel settings={settings} onOutput={onOutput} onStatus={onStatus} />
-            </div>
+          <div className={`app-body${view === 'settings' ? ' app-body--full' : ''}`}>
+            {/* One task per view. The result rail is shared context that stays
+                relevant regardless of which action produced the last response. */}
+            <main
+              className="app-view"
+              id={`view-${view}`}
+              role="tabpanel"
+              aria-labelledby={`nav-tab-${view}`}
+              tabIndex={-1}
+            >
+              {view === 'print' ? (
+                <PrintPanel
+                  settings={settings}
+                  onOutput={onOutput}
+                  onStatus={onStatus}
+                  onPreview={onPreview}
+                />
+              ) : null}
 
-            <aside className="results-rail" aria-label="Last response">
-              <div className="card output">
-                <h2>Last response</h2>
-                {output ? (
-                  <pre aria-live="polite">{output}</pre>
-                ) : (
-                  <p className="muted empty-state">
-                    Responses from print and settings actions appear here.
-                  </p>
-                )}
-              </div>
-            </aside>
-          </main>
-        </div>
+              {view === 'templates' ? (
+                <TemplatesPanel
+                  settings={settings}
+                  onOutput={onOutput}
+                  onStatus={onStatus}
+                  onPreview={onPreview}
+                />
+              ) : null}
+
+              {view === 'custom' ? (
+                <div className="view-stack">
+                  <CustomLabelPanel
+                    settings={settings}
+                    onOutput={onOutput}
+                    onStatus={onStatus}
+                    onPreview={onPreview}
+                  />
+                  <RawTsplPanel
+                    settings={settings}
+                    onOutput={onOutput}
+                    onStatus={onStatus}
+                    onPreview={onPreview}
+                  />
+                </div>
+              ) : null}
+
+              {view === 'settings' ? (
+                <SettingsPanel
+                  settings={settings}
+                  onSaved={handleSaved}
+                  onOutput={onOutput}
+                  onStatus={onStatus}
+                />
+              ) : null}
+            </main>
+
+            {/* The preview rail is irrelevant on the Settings view, so hide it there. */}
+            {view !== 'settings' ? (
+              <aside className="results-rail" aria-label="Label preview">
+                <div className="card">
+                  <h2>Preview</h2>
+                  {preview.source ? (
+                    <TsplVisualizer source={preview.source} dpmm={preview.dpmm} />
+                  ) : (
+                    <p className="muted empty-state">
+                      A label preview appears here as you edit or fill in a template.
+                    </p>
+                  )}
+                </div>
+              </aside>
+            ) : null}
+          </div>
+        </>
       ) : (
         <div className="app-loading">
           <div className="card">

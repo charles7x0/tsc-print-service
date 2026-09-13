@@ -79,3 +79,53 @@ export interface PrintLabelBody {
   quantity: number;
   copies: number;
 }
+
+// ---- DB-stored, user-editable TSPL templates -----------------------------
+
+export interface TemplateVariable {
+  name: string;
+  required: boolean;
+  description?: string;
+  sample?: string | number | boolean;
+}
+
+export interface TemplateGeometry {
+  widthMm: number;
+  heightMm: number;
+  dpmm: number;
+}
+
+export interface StringTemplate {
+  name: string;
+  description: string;
+  source: string;
+  variables: TemplateVariable[];
+  geometry: TemplateGeometry;
+  updatedAt: string;
+}
+
+/** Body for creating a template. */
+export interface CreateTemplateBody {
+  name: string;
+  description: string;
+  source: string;
+  variables: TemplateVariable[];
+  geometry: TemplateGeometry;
+}
+
+/** Body for updating a template (name comes from the URL). */
+export type UpdateTemplateBody = Omit<CreateTemplateBody, 'name'>;
+
+/** Values supplied for a template's placeholders. */
+export type TemplateData = Record<string, string | number | boolean>;
+
+export interface TemplatePreviewResponse {
+  ok: true;
+  name: string;
+  tspl: string;
+}
+
+// ---- UI navigation -------------------------------------------------------
+
+/** Primary views the single-page app switches between. */
+export type ViewId = 'print' | 'templates' | 'custom' | 'settings';

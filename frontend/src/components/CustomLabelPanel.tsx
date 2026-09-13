@@ -9,6 +9,8 @@ interface Props {
   settings: Settings;
   onOutput: (data: unknown) => void;
   onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
+  /** Push a TSPL preview to the shared right-rail visualizer. */
+  onPreview: (source: string, dpmm: number) => void;
 }
 
 const rotationOptions: { value: Rotation; label: string }[] = [
@@ -18,7 +20,7 @@ const rotationOptions: { value: Rotation; label: string }[] = [
   { value: 270, label: '270' },
 ];
 
-export function CustomLabelPanel({ settings, onOutput, onStatus }: Props) {
+export function CustomLabelPanel({ settings, onOutput, onStatus, onPreview }: Props) {
   // Geometry seeded from settings; kept in sync when settings change.
   const [width, setWidth] = useState(settings.label.widthMm);
   const [height, setHeight] = useState(settings.label.heightMm);
@@ -45,6 +47,27 @@ export function CustomLabelPanel({ settings, onOutput, onStatus }: Props) {
     setGap(settings.label.gapMm);
     setDirection(settings.label.direction);
   }, [settings]);
+
+  // Push an approximate TSPL preview built from the current form state to the
+  // shared right-rail visualizer.
+  useEffect(() => {
+    const tspl = [
+      `SIZE ${width} mm,${height} mm`,
+      `GAP ${gap} mm,0 mm`,
+      `DIRECTION ${direction},0`,
+      'CLS',
+      'CODEPAGE UTF-8',
+      `TEXT ${tx},${ty},"3",${tRot},1,1,"${text}"`,
+      `BARCODE ${bx},${by},"${bType}",${bHeight},0,${bRot},3,1,"${bData}"`,
+      'PRINT 1,1',
+    ].join('\n');
+    onPreview(tspl, settings.label.dpmm);
+  }, [
+    width, height, gap, direction,
+    text, tx, ty, tRot,
+    bData, bType, bx, by, bHeight, bRot,
+    settings.label.dpmm, onPreview,
+  ]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

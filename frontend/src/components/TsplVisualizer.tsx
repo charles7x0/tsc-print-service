@@ -43,9 +43,21 @@ export function TsplVisualizer({ source, dpmm }: Props) {
     const draw = () => renderLabel(canvas, parsed, { zoom });
     draw();
 
-    // Redraw when the container resizes so the fit-to-width baseline stays correct.
+    // Redraw when the container's WIDTH changes so the fit-to-width baseline
+    // stays correct. We observe the scroll container and only redraw when its
+    // width actually changes — resizing the canvas itself (which renderLabel
+    // does) must NOT re-trigger a draw, or the ResizeObserver feeds back into an
+    // infinite resize loop.
     const target = canvas.parentElement ?? canvas;
-    const ro = new ResizeObserver(draw);
+    let lastWidth = target.clientWidth;
+    const ro = new ResizeObserver(() => {
+      const w = target.clientWidth;
+      if (w === lastWidth) return; // ignore height-only / self-induced changes
+      lastWidth = w;
+      // Defer to the next frame so the observer callback returns before we
+      // mutate layout (avoids "ResizeObserver loop" warnings).
+      window.requestAnimationFrame(draw);
+    });
     ro.observe(target);
     return () => ro.disconnect();
   }, [parsed, zoom]);

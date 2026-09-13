@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import type { Settings } from '../types';
 import { downloadText, makePrnFilename } from '../download';
 import { Card } from './Card';
-import { TsplVisualizer } from './TsplVisualizer';
 
 interface Props {
   settings: Settings;
   onOutput: (data: unknown) => void;
   onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
+  /** Push a TSPL preview to the shared right-rail visualizer. */
+  onPreview: (source: string, dpmm: number) => void;
 }
 
 const DEFAULT_TSPL = `SIZE 45 mm,75 mm
@@ -19,11 +20,16 @@ TEXT 60,30,"3",90,1,1,"Raw Test"
 BARCODE 180,30,"128",70,0,90,3,1,"123456"
 PRINT 1,1`;
 
-export function RawTsplPanel({ settings, onOutput, onStatus }: Props) {
+export function RawTsplPanel({ settings, onOutput, onStatus, onPreview }: Props) {
   const [commands, setCommands] = useState(DEFAULT_TSPL);
   const [busy, setBusy] = useState(false);
 
   const dryRun = settings.printer.dryRun;
+
+  // Push the current commands to the shared right-rail preview as they change.
+  useEffect(() => {
+    onPreview(commands, settings.label.dpmm);
+  }, [commands, settings.label.dpmm, onPreview]);
 
   /** Send the TSPL to the server (prints in live mode, downloads in dry-run). */
   async function handleSubmit(e: React.FormEvent) {
@@ -91,9 +97,6 @@ export function RawTsplPanel({ settings, onOutput, onStatus }: Props) {
           </button>
         </div>
       </form>
-
-      <h3 className="visualizer-heading">Preview</h3>
-      <TsplVisualizer source={commands} dpmm={settings.label.dpmm} />
     </Card>
   );
 }

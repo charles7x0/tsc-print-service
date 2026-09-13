@@ -93,10 +93,59 @@ body {
   letter-spacing: 1px;
 }
 
+/* ---- Primary navigation (view switcher) ----------------------------------- */
+.app-nav {
+  position: sticky;
+  top: 49px; /* sits directly under the sticky header */
+  z-index: 9;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-strong);
+  padding: 0 var(--sp-5);
+}
+
+.app-nav__list {
+  display: flex;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.app-nav__tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: var(--sp-3) var(--sp-4);
+  cursor: pointer;
+}
+
+.app-nav__tab:hover { color: var(--text); background: var(--surface-1); }
+
+.app-nav__tab--active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--surface-1);
+}
+
+.app-nav__tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ---- App body: active view + shared result rail --------------------------- */
 .app-body {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(320px, 380px) 1fr;
+  grid-template-columns: 1fr minmax(280px, 360px);
   gap: var(--sp-4);
   padding: var(--sp-4) var(--sp-5);
   max-width: 1500px;
@@ -105,30 +154,35 @@ body {
   align-items: start;
 }
 
-.app-sidebar { position: sticky; top: 68px; }
+/* Single-column body when the preview rail is hidden (e.g. Settings view). */
+.app-body--full { grid-template-columns: 1fr; }
 
-.app-main {
-  display: grid;
-  grid-template-columns: 1fr minmax(280px, 360px);
-  gap: var(--sp-4);
-  align-items: start;
-}
+/* The active view fills its column; remove the tabpanel focus outline since
+   focus is moved here programmatically only for screen-reader context. */
+.app-view { min-width: 0; }
+.app-view:focus { outline: none; }
 
-.action-grid {
+/* Custom / Raw view stacks its two tools vertically. */
+.view-stack {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
   min-width: 0;
 }
 
-.results-rail { position: sticky; top: 68px; }
+.results-rail { position: sticky; top: 100px; }
 
 .app-loading { padding: var(--sp-6); max-width: 480px; margin: 0 auto; }
 
 @media (max-width: 1100px) {
   .app-body { grid-template-columns: 1fr; }
-  .app-main { grid-template-columns: 1fr; }
-  .app-sidebar, .results-rail { position: static; }
+  .results-rail { position: static; }
+}
+
+@media (max-width: 640px) {
+  .app-nav { padding: 0 var(--sp-3); }
+  .app-nav__list { overflow-x: auto; }
+  .app-nav__tab { padding: var(--sp-3) var(--sp-3); white-space: nowrap; }
 }
 
 /* ---- Cards ---------------------------------------------------------------- */
@@ -294,6 +348,36 @@ button.primary:disabled, button.secondary:disabled { opacity: 0.5; cursor: not-a
   gap: var(--sp-3);
   flex-wrap: wrap;
   align-items: center;
+}
+
+button.secondary.danger {
+  color: var(--danger, #b42318);
+  border-color: var(--danger, #b42318);
+}
+
+/* ---- Template variables table -------------------------------------------- */
+.variables-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: var(--sp-3);
+}
+
+.variables-table th,
+.variables-table td {
+  text-align: left;
+  padding: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.variables-table th {
+  font-size: 0.85em;
+  color: var(--muted, inherit);
+  font-weight: 600;
+}
+
+.variables-table input[type='text'] {
+  width: 100%;
 }
 
 /* ---- Output --------------------------------------------------------------- */
