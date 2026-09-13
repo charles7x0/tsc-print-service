@@ -6,6 +6,8 @@ import { Card } from './Card';
 
 interface Props {
   settings: Settings;
+  /** True when this panel is the visible view (drives the shared preview). */
+  active: boolean;
   onOutput: (data: unknown) => void;
   onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
   /** Push a TSPL preview to the shared right-rail visualizer. */
@@ -20,16 +22,18 @@ TEXT 60,30,"3",90,1,1,"Raw Test"
 BARCODE 180,30,"128",70,0,90,3,1,"123456"
 PRINT 1,1`;
 
-export function RawTsplPanel({ settings, onOutput, onStatus, onPreview }: Props) {
+export function RawTsplPanel({ settings, active, onOutput, onStatus, onPreview }: Props) {
   const [commands, setCommands] = useState(DEFAULT_TSPL);
   const [busy, setBusy] = useState(false);
 
   const dryRun = settings.printer.dryRun;
 
-  // Push the current commands to the shared right-rail preview as they change.
+  // Push the current commands to the shared right-rail preview as they change,
+  // but only while this view is active (so panels don't fight over the preview).
   useEffect(() => {
+    if (!active) return;
     onPreview(commands, settings.label.dpmm);
-  }, [commands, settings.label.dpmm, onPreview]);
+  }, [active, commands, settings.label.dpmm, onPreview]);
 
   /** Send the TSPL to the server (prints in live mode, downloads in dry-run). */
   async function handleSubmit(e: React.FormEvent) {

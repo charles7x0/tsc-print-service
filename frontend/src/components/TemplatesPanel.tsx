@@ -11,6 +11,8 @@ import { Card } from './Card';
 
 interface Props {
   settings: Settings;
+  /** True when this panel is the visible view (drives the shared preview). */
+  active: boolean;
   onOutput: (data: unknown) => void;
   onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
   /** Push a TSPL preview to the shared right-rail visualizer. */
@@ -70,7 +72,7 @@ function sameVariables(a: TemplateVariable[], b: TemplateVariable[]): boolean {
  * and substitution match exactly what will print), then rendered by the shared
  * TsplVisualizer. Preview calls are debounced while editing.
  */
-export function TemplatesPanel({ settings, onOutput, onStatus, onPreview }: Props) {
+export function TemplatesPanel({ settings, active, onOutput, onStatus, onPreview }: Props) {
   const [templates, setTemplates] = useState<StringTemplate[]>([]);
   const [selected, setSelected] = useState<string>('');
   const [draft, setDraft] = useState<StringTemplate>(emptyTemplate());
@@ -108,6 +110,7 @@ export function TemplatesPanel({ settings, onOutput, onStatus, onPreview }: Prop
   // without a server round-trip on every keystroke.
   const previewTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
+    if (!active) return;
     window.clearTimeout(previewTimer.current);
     previewTimer.current = window.setTimeout(() => {
       const data = sampleData(draft.variables);
@@ -121,7 +124,7 @@ export function TemplatesPanel({ settings, onOutput, onStatus, onPreview }: Prop
       onPreview(local, draft.geometry.dpmm);
     }, 300);
     return () => window.clearTimeout(previewTimer.current);
-  }, [draft.source, draft.variables, draft.geometry.dpmm, onPreview]);
+  }, [active, draft.source, draft.variables, draft.geometry.dpmm, onPreview]);
 
   // Auto-sync the Variables table to the {{placeholders}} used in the source.
   // - New placeholders appear as rows automatically (required, no sample yet).

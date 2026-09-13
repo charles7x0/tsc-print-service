@@ -105,56 +105,58 @@ export function App(): JSX.Element {
           <div className={`app-body${view === 'settings' ? ' app-body--full' : ''}`}>
             {/* One task per view. The result rail is shared context that stays
                 relevant regardless of which action produced the last response. */}
-            <main
-              className="app-view"
-              id={`view-${view}`}
-              role="tabpanel"
-              aria-labelledby={`nav-tab-${view}`}
-              tabIndex={-1}
-            >
-              {view === 'print' ? (
+            {/* All panels stay mounted (hidden when inactive) so their form
+                state — selected template, entered values, edited source — is
+                preserved when switching views. Each panel only drives the shared
+                preview when it is the active view. */}
+            <main className="app-view" tabIndex={-1}>
+              <div id="view-print" role="tabpanel" aria-labelledby="nav-tab-print" hidden={view !== 'print'}>
                 <PrintPanel
                   settings={settings}
+                  active={view === 'print'}
                   onOutput={onOutput}
                   onStatus={onStatus}
                   onPreview={onPreview}
                 />
-              ) : null}
+              </div>
 
-              {view === 'templates' ? (
+              <div id="view-templates" role="tabpanel" aria-labelledby="nav-tab-templates" hidden={view !== 'templates'}>
                 <TemplatesPanel
                   settings={settings}
+                  active={view === 'templates'}
                   onOutput={onOutput}
                   onStatus={onStatus}
                   onPreview={onPreview}
                 />
-              ) : null}
+              </div>
 
-              {view === 'custom' ? (
+              <div id="view-custom" role="tabpanel" aria-labelledby="nav-tab-custom" hidden={view !== 'custom'}>
                 <div className="view-stack">
                   <CustomLabelPanel
                     settings={settings}
+                    active={view === 'custom'}
                     onOutput={onOutput}
                     onStatus={onStatus}
                     onPreview={onPreview}
                   />
                   <RawTsplPanel
                     settings={settings}
+                    active={view === 'custom'}
                     onOutput={onOutput}
                     onStatus={onStatus}
                     onPreview={onPreview}
                   />
                 </div>
-              ) : null}
+              </div>
 
-              {view === 'settings' ? (
+              <div id="view-settings" role="tabpanel" aria-labelledby="nav-tab-settings" hidden={view !== 'settings'}>
                 <SettingsPanel
                   settings={settings}
                   onSaved={handleSaved}
                   onOutput={onOutput}
                   onStatus={onStatus}
                 />
-              ) : null}
+              </div>
             </main>
 
             {/* The preview rail is irrelevant on the Settings view, so hide it there. */}
