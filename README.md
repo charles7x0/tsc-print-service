@@ -597,12 +597,11 @@ tests/
 
 ## Docker
 
-Build and run (single platform). Mount a volume for `./data` so the settings
-database survives container restarts:
+Build and run. Mount a volume for `/app/data` so the settings database survives
+container restarts:
 ```bash
 docker build -t tsc-printer-server .
 docker run --rm -p 8080:8080 \
-  -e PORT=8080 \
   -v tsc_data:/app/data \
   tsc-printer-server
 ```
@@ -619,12 +618,37 @@ Multi-arch (amd64 + arm64):
 docker buildx build --platform linux/amd64,linux/arm64 -t tsc-printer-server .
 ```
 
-The image is a multi-stage build on `node:20-alpine`: the build stage compiles
-the server TypeScript **and** builds the React frontend into `public/`; the
-runtime stage installs only production dependencies and copies `dist/` and
-`public/`. It binds to `0.0.0.0` so the port maps correctly.
-`better-sqlite3` ships prebuilt binaries for common platforms; on uncommon
-architectures it compiles during `npm ci` (Alpine includes the needed toolchain).
+### How the image is built
+
+The image is a three-stage build on `node:22-alpine` (Node 22 satisfies
+`better-sqlite3@13`'s `engines: node >=22`):
+
+- **`deps`** installs production dependencies only, including the native
+  `better-sqlite3` binary, then trims its compile-time sources and the prebuilt
+  binaries for platforms other than Alpine (musl).
+- **`build`** compiles the server TypeScript **and** builds the React frontend
+  into `public/`.
+- **`runtime`** copies just the trimmed `node_modules`, `dist/`, and `public/`.
+  It ships **no build tools**, runs as the non-root `node` user, declares a
+  `data` volume, and includes a `HEALTHCHECK` that polls `/api/health` (using
+  Node's `fetch`, so no `curl`/`wget` is added). It binds to `0.0.0.0` so the
+  port maps correctly. Final size is ~189 MB.
+
+### Building behind a TLS-inspection proxy (e.g. Zscaler)
+
+Compiling/fetching the `better-sqlite3` native binary reaches out to
+`nodejs.org` / `github.com` over HTTPS. If your network re-signs TLS traffic,
+those requests fail certificate verification. To fix it **without disabling TLS
+verification**:
+
+1. Export your proxy's root CA (PEM) and drop it into `certs/` as a `.crt`
+   file (the folder is kept via `certs/.gitkeep`; real certs are gitignored).
+2. Build normally — the builder stages install that CA into their trust store
+   and expose it to Node via `NODE_EXTRA_CA_CERTS`. The CA is **never** included
+   in the runtime image.
+
+For registry pulls behind the same proxy, point BuildKit at the CA with a
+`buildkitd.toml` (`[registry."docker.io"] ca=[...]`) when creating your builder.
 
 ---
 
@@ -669,7 +693,8 @@ frontend/              # React app (Vite + TypeScript)
 public/                # built React bundle (generated, gitignored)
 tests/                 # vitest unit + API tests (server)
 data/                  # SQLite database (created at runtime, gitignored)
-Dockerfile             # multi-stage, multi-arch container build
+Dockerfile             # three-stage, multi-arch container build (node:22-alpine)
+certs/                 # optional proxy root CA for builds (gitignored, .gitkeep kept)
 .env.example           # annotated environment template (PORT/HOST)
 ```
 

@@ -1,0 +1,6 @@
+# Placeholder so the certs/ directory exists in the Docker build context.
+#
+# If you build behind a TLS-inspection proxy (e.g. Zscaler), drop the proxy's
+# root CA here as a .crt file (PEM encoded). It is installed into the builder
+# stages' trust store so npm/node-gyp/prebuild-install can fetch over HTTPS.
+# The runtime image does NOT include it. Real certs are gitignored.

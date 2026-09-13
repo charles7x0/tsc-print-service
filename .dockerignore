@@ -1,8 +1,37 @@
+# Dependencies (reinstalled inside the image)
 node_modules
+frontend/node_modules
+
+# Build output (regenerated inside the image)
 dist
+public
 output
+obj
+bin
 coverage
+frontend/tsconfig.tsbuildinfo
+
+# Secrets / local config
 .env
-*.log
+.env.*
+!.env.example
+
+# VCS / IDE / project meta
 .git
+.gitignore
+.kiro
+.vs
+.vscode
+
+# Tests and docs (not needed at runtime)
 tests
+docs
+*.md
+
+# Native Windows artifacts not used by the Linux image
+tsclibnet.dll
+
+# Local data / logs
+data
+*.log
+build-log.txt
