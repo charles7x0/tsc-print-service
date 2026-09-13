@@ -8,11 +8,18 @@ native DLL and no `edge-js`**, so it runs the same on **Linux, Windows, and ARM*
 It ships with:
 
 - A typed **TSPL command builder** (text, barcodes, raw commands).
-- An **HTTP API** to print a built-in test label, a custom label, or raw TSPL.
-- A **React frontend** (Vite + TypeScript) to drive the printer from a browser.
-- A **dry-run mode** that writes the TSPL to a file so you can test with **no printer**.
-- **SQLite-backed settings**: printer and label configuration is stored in a
-  database and editable at runtime through the API — only `PORT`/`HOST` stay in `.env`.
+- **Stored, editable templates**: raw TSPL with `{{placeholders}}` saved in the
+  database, printed via the API by name with your data — create/edit them in the
+  browser or over the API.
+- An **HTTP API** to print from a template, a built-in test label, a custom
+  label, or raw TSPL.
+- A **React frontend** (Vite + TypeScript) to author templates, fill and print
+  them, and preview the label live.
+- A **dry-run mode** that returns the TSPL (downloaded by the UI) so you can test
+  with **no printer**.
+- **SQLite-backed settings and templates**: printer/label configuration and label
+  templates are stored in a database and editable at runtime — only `PORT`/`HOST`
+  stay in `.env`.
 
 ---
 
@@ -260,6 +267,73 @@ Base path: `/api`. All print endpoints return `{ ok, result, tspl }`, where
 `tspl` is the exact program sent to the printer and `result` reports the mode
 (`network` or `dry-run`) and bytes sent.
 
+### Send a print over the API (quickstart)
+
+The recommended way to print is to **store a template once**, then **print it
+many times** with different data. A template is raw TSPL with `{{placeholders}}`;
+you supply values at print time. The server substitutes, escapes, and sends.
+
+A ready-to-use template, `tad-inspecao-defect-taxa`, is seeded on first run.
+
+**1. (Optional) list the available templates and their variables:**
+
+```bash
+curl http://localhost:8080/api/db-templates
+```
+
+**2. Print it — pass a value for each declared variable:**
+
+```bash
+curl -X POST http://localhost:8080/api/db-templates/tad-inspecao-defect-taxa/print \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "qrData": "AGM24V-L2",
+      "id": "AGM24V-L2",
+      "timestamp": "11/09/2026 10:15:32",
+      "footer": "BATTERY DEFECT ANALYSIS",
+      "m0_label": "TCA",  "m0_value": "84", "m0_ci": "78-88",
+      "m1_label": "TCF",  "m1_value": "62", "m1_ci": "55-70",
+      "m2_label": "TCAR", "m2_value": "93", "m2_ci": "85-95",
+      "m3_label": "IMP",  "m3_value": "45", "m3_ci": "40-55",
+      "m4_label": "TAXA", "m4_value": "78", "m4_ci": "70-85",
+      "m5_label": "CM",   "m5_value": "12.3","m5_ci": "10-15"
+    }
+  }'
+```
+
+PowerShell:
+
+```powershell
+$body = @{
+  data = @{
+    qrData = 'AGM24V-L2'; id = 'AGM24V-L2'; timestamp = '11/09/2026 10:15:32'
+    footer = 'BATTERY DEFECT ANALYSIS'
+    m0_label = 'TCA';  m0_value = '84';  m0_ci = '78-88'
+    m1_label = 'TCF';  m1_value = '62';  m1_ci = '55-70'
+    m2_label = 'TCAR'; m2_value = '93';  m2_ci = '85-95'
+    m3_label = 'IMP';  m3_value = '45';  m3_ci = '40-55'
+    m4_label = 'TAXA'; m4_value = '78';  m4_ci = '70-85'
+    m5_label = 'CM';   m5_value = '12.3';m5_ci = '10-15'
+  }
+} | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:8080/api/db-templates/tad-inspecao-defect-taxa/print `
+  -Method POST -ContentType 'application/json' -Body $body
+```
+
+The response is `{ ok, template, copies, result, tspl }`. In **dry-run** mode
+(`printer.dryRun = true`, the default) nothing is sent to hardware — the `tspl`
+is returned so you can inspect or save it. To print for real, set
+`printer.dryRun = false` and a valid `printer.ip` (see [Configuration](#settings-sqlite)).
+
+> Prefer **preview before printing** while iterating: `POST
+> /api/db-templates/:name/preview` returns the rendered `tspl` **without**
+> sending it to the printer.
+
+There are two other ways to print, covered below: the code-defined
+[template registry](#template-driven-printing-code-templates) (`POST /api/print`)
+and [raw TSPL](#post-apiprintraw).
+
 ### `GET /api/health`
 Liveness check. Returns `{ "status": "ok", "dryRun": <bool> }`.
 
@@ -283,13 +357,74 @@ current settings, validated, and persisted. Returns `{ ok, settings }`.
 { "printer": { "dryRun": false, "ip": "10.0.0.5" }, "label": { "widthMm": 100 } }
 ```
 
-### Template-driven printing (recommended)
+### Stored templates (`/api/db-templates`)
 
-Printing is template-driven: the caller sends **business data** and names a
-**template**; the server owns all layout, coordinate maths, and DPI scaling.
-The caller never sends dots, positions, or geometry — those come from the
-printer/label configuration, so the same request prints correctly on a 203 or
-300 dpi printer.
+User-editable templates stored in SQLite. A template is **raw TSPL with
+`{{placeholders}}`** plus a **variable manifest** (name, required, sample). This
+is the path used by the web UI's template editor and the quickstart above. It is
+the most flexible way to author labels — edit the TSPL directly, no code changes.
+
+On save, a template is validated: it must contain `SIZE` and `PRINT`, use a
+`GAP`/`BLINE`, and every `{{placeholder}}` must be a declared variable (and vice
+versa). At print/preview time, every supplied value is escaped so caller data can
+never break out of a quoted argument or inject extra commands, and the output is
+normalised to CRLF line endings (required by TSPL).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/db-templates` | List all templates (name, description, source, variables, geometry) |
+| GET | `/api/db-templates/:name` | Get one template |
+| POST | `/api/db-templates` | Create a template |
+| PUT | `/api/db-templates/:name` | Update a template |
+| DELETE | `/api/db-templates/:name` | Delete a template |
+| POST | `/api/db-templates/:name/preview` | Render to TSPL **without** printing |
+| POST | `/api/db-templates/:name/print` | Render and send to the printer |
+
+**Create a template:**
+
+```bash
+curl -X POST http://localhost:8080/api/db-templates \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "hello",
+    "description": "Minimal example",
+    "source": "SIZE 45 mm,75 mm\nGAP 3 mm,0 mm\nDIRECTION 0,0\nCLS\nCODEPAGE UTF-8\nTEXT 20,20,\"3\",0,1,1,\"{{title}}\"\nPRINT 1,1",
+    "variables": [ { "name": "title", "required": true, "sample": "Hello" } ],
+    "geometry": { "widthMm": 45, "heightMm": 75, "dpmm": 8 }
+  }'
+```
+
+**Preview (no printing) — returns `{ ok, name, tspl }`:**
+
+```bash
+curl -X POST http://localhost:8080/api/db-templates/hello/preview \
+  -H "Content-Type: application/json" \
+  -d '{ "data": { "title": "World" } }'
+```
+
+**Print — returns `{ ok, template, copies, result, tspl }`:**
+
+```bash
+curl -X POST http://localhost:8080/api/db-templates/hello/print \
+  -H "Content-Type: application/json" \
+  -d '{ "data": { "title": "World" } }'
+```
+
+Errors:
+- `404 TemplateNotFound` — no template with that name.
+- `409 TemplateExists` — creating a name that already exists.
+- `400 TemplateValidationError` — the TSPL/manifest is invalid (`issues[]` lists
+  each problem, e.g. `missing-print`, `undeclared-variable`).
+- `400 MissingVariables` — a required variable had no value (`missing[]` names them).
+
+### Template-driven printing (code templates)
+
+An alternative to stored templates: **code-defined** templates compiled into the
+server. The caller sends **business data** and names a **template**; the server
+owns all layout, coordinate maths, and DPI scaling. The caller never sends dots,
+positions, or geometry — those come from the printer/label configuration, so the
+same request prints correctly on a 203 or 300 dpi printer. Use stored templates
+(above) unless you specifically want computed-geometry layouts in code.
 
 #### `GET /api/templates`
 List the available templates and a best-effort description of each template's
@@ -500,22 +635,26 @@ src/
   config.ts            # env loading + validation (PORT/HOST only)
   index.ts             # entry point (opens DB, starts server, graceful shutdown)
   db/
-    database.ts        # SQLite connection + schema (settings table)
+    database.ts        # SQLite connection + schema (settings + templates tables)
     settings.ts        # settings types, zod schemas, defaults
     settingsRepository.ts  # seed / read / update settings
+    templatesRepository.ts # CRUD for stored TSPL templates
+    templateSeeds.ts   # built-in templates seeded on first run
   http/
     app.ts             # Express app factory (also serves the frontend)
-    routes.ts          # API routes (print + settings)
+    routes.ts          # API routes (print + settings + db-templates)
     schemas.ts         # request validation schemas
   printer/
     service.ts         # reads settings, builds TSPL, sends via the transport
     transport.ts       # NetworkTransport (TCP) + DryRunTransport (returns TSPL)
   templates/
-    types.ts           # TemplateDefinition, RenderContext
+    types.ts           # TemplateDefinition, RenderContext (code templates)
     registry.ts        # TemplateRegistry (lookup, validate, render)
-    defect-tag.ts      # defect-tag template
-    simple-label.ts    # simple-label template
+    defect-tag.ts      # defect-tag code template
+    simple-label.ts    # simple-label code template
     index.ts           # createDefaultRegistry()
+    render.ts          # {{placeholder}} substitution + escaping (stored templates)
+    string-template.ts # stored-template model, validation, renderTemplate()
   tspl/
     types.ts           # label/element types
     builder.ts         # TSPL string generation + escaping
