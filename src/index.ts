@@ -1,16 +1,18 @@
 import { loadConfig } from './config.js';
 import { openDatabase } from './db/database.js';
 import { SettingsRepository } from './db/settingsRepository.js';
+import { TemplatesRepository } from './db/templatesRepository.js';
 import { createApp } from './http/app.js';
 
 function main(): void {
   const config = loadConfig();
 
-  // Open the settings database and seed defaults on first run.
+  // Open the database and seed defaults on first run.
   const db = openDatabase();
   const settings = new SettingsRepository(db);
+  const templates = new TemplatesRepository(db);
 
-  const app = createApp({ settings });
+  const app = createApp({ settings, templates });
 
   const server = app.listen(config.http.port, config.http.host, () => {
     const { host, port } = config.http;

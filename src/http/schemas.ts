@@ -96,6 +96,17 @@ export const printSchema = z.object({
 });
 
 /**
+ * POST /api/db-templates/:name/preview and .../print — supply the data values
+ * for the template's placeholders. Values are strings, numbers or booleans.
+ */
+export const templateDataSchema = z.object({
+  data: z.record(z.union([z.string(), z.number(), z.boolean()])).default({}),
+  copies: z.number().int().positive().max(999).default(1),
+});
+
+export type TemplateDataBody = z.infer<typeof templateDataSchema>;
+
+/**
  * POST /api/test-connection — optional target override. When fields are
  * omitted, the saved settings are used. Lets the UI test before saving.
  */
