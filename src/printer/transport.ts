@@ -77,23 +77,52 @@ export function probeConnection(target: PrinterTarget): Promise<ProbeResult> {
  * No native dependencies, so it runs on Linux, Windows and ARM alike.
  */
 export class NetworkTransport implements PrinterTransport {
-  constructor(private readonly target: PrinterTarget) {}
+  /**
+   * Milliseconds to keep the socket open AFTER the write is flushed, before
+   * closing. TSC printers process the job as it is received; closing the
+   * connection too quickly can tear it down before the printer has committed
+   * the buffer, which manifests as "bytes sent but nothing prints". The TSC
+   * reference SDK does the same (openport delay + closeport linger).
+   */
+  private readonly lingerMs: number;
+
+  constructor(
+    private readonly target: PrinterTarget,
+    lingerMs = 500,
+  ) {
+    this.lingerMs = lingerMs;
+  }
 
   send(tspl: string): Promise<SendResult> {
     const payload = Buffer.from(tspl, 'utf8');
     const { ip, port, timeoutMs } = this.target;
+    const lingerMs = this.lingerMs;
 
     return new Promise<SendResult>((resolvePromise, reject) => {
       const socket = new Socket();
       let settled = false;
+      let lingerTimer: NodeJS.Timeout | undefined;
 
       const fail = (err: Error): void => {
         if (settled) return;
         settled = true;
+        if (lingerTimer) clearTimeout(lingerTimer);
         socket.destroy();
         reject(err);
       };
 
+      const succeed = (): void => {
+        if (settled) return;
+        settled = true;
+        resolvePromise({
+          mode: 'network',
+          bytesSent: payload.length,
+          target: { ip, port },
+        });
+      };
+
+      // Nagle off: send the job immediately in one go.
+      socket.setNoDelay(true);
       socket.setTimeout(timeoutMs);
       socket.once('timeout', () =>
         fail(new Error(`Timeout after ${timeoutMs}ms connecting to ${ip}:${port}`)),
@@ -106,18 +135,21 @@ export class NetworkTransport implements PrinterTransport {
             fail(writeErr);
             return;
           }
-          socket.end();
+          // Hold the connection open briefly so the printer can consume and
+          // commit the full job, then close gracefully. Resolve after the
+          // linger so callers know the job was delivered.
+          lingerTimer = setTimeout(() => {
+            socket.end();
+            succeed();
+          }, lingerMs);
         });
       });
 
+      // If the printer closes first (or after our end()), treat as success
+      // unless we already failed.
       socket.once('close', () => {
-        if (settled) return;
-        settled = true;
-        resolvePromise({
-          mode: 'network',
-          bytesSent: payload.length,
-          target: { ip, port },
-        });
+        if (lingerTimer) clearTimeout(lingerTimer);
+        succeed();
       });
     });
   }
