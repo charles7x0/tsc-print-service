@@ -112,37 +112,53 @@ function drawItem(ctx: CanvasRenderingContext2D, item: LabelItem) {
 }
 
 /**
- * Approximate a TSPL bitmap font. Real font heights vary; we use a base height
- * per font id scaled by the y-multiplier. Good enough to gauge placement.
+ * TSPL built-in bitmap fonts have fixed cell dimensions in dots (width x height):
+ *   1: 8x12   2: 12x20   3: 16x24   4: 24x32   5: 32x48
+ *   6: 14x19 (OCR-B)     7: 21x27 (OCR-B)      8: 14x25 (OCR-A)
+ * Using the real cell size (not guessed values) makes preview proportions match
+ * the printed label. Font "0"/TTF is scalable; approximate at 24x24.
  */
-function baseFontHeight(font: string): number {
-  const map: Record<string, number> = {
-    '1': 12,
-    '2': 16,
-    '3': 24,
-    '4': 32,
-    '5': 40,
-    '6': 48,
-    '7': 56,
-    '8': 64,
-    '0': 24, // TrueType default-ish
-  };
-  return map[font] ?? 24;
+const FONT_CELL: Record<string, { w: number; h: number }> = {
+  '1': { w: 8, h: 12 },
+  '2': { w: 12, h: 20 },
+  '3': { w: 16, h: 24 },
+  '4': { w: 24, h: 32 },
+  '5': { w: 32, h: 48 },
+  '6': { w: 14, h: 19 },
+  '7': { w: 21, h: 27 },
+  '8': { w: 14, h: 25 },
+  '0': { w: 12, h: 24 },
+};
+
+function fontCell(font: string): { w: number; h: number } {
+  return FONT_CELL[font] ?? { w: 16, h: 24 };
 }
 
 function drawText(ctx: CanvasRenderingContext2D, item: TextItem) {
   ctx.save();
   applyRotation(ctx, item.x, item.y, item.rotation);
 
-  const px = baseFontHeight(item.font) * Math.max(1, item.yMul);
-  ctx.font = `${px}px ui-monospace, Consolas, monospace`;
+  const cell = fontCell(item.font);
+  const yMul = Math.max(1, item.yMul);
+  const xMul = Math.max(1, item.xMul);
+
+  // Total glyph cell size in dots, matching TSPL's fixed-pitch fonts.
+  const cellH = cell.h * yMul;
+  const cellW = cell.w * xMul;
+
+  // Draw each character into its fixed cell so the string occupies exactly
+  // (chars * cellW) dots — matching the printer's fixed-pitch advance so the
+  // preview's text length lines up with the real label.
+  const glyphPx = cellH * 0.92; // slight inset so glyphs sit within the cell
+  ctx.font = `${glyphPx}px ui-monospace, Consolas, monospace`;
   ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  // Horizontal multiplier widens the glyphs relative to the vertical size.
-  const xScale = Math.max(1, item.xMul) / Math.max(1, item.yMul);
-  if (xScale !== 1) ctx.scale(xScale, 1);
+  ctx.textAlign = 'center';
   ctx.fillStyle = '#111827';
-  ctx.fillText(item.content, 0, 0);
+
+  const chars = item.content.split('');
+  for (let i = 0; i < chars.length; i++) {
+    ctx.fillText(chars[i], i * cellW + cellW / 2, 0);
+  }
 
   ctx.restore();
 }
@@ -190,12 +206,26 @@ function drawBarcode(ctx: CanvasRenderingContext2D, item: BarcodeItem) {
  * use, so the preview reveals collisions with nearby elements. The footprint is
  * approximated as ~25 modules wide (a common QR version), each `cellWidth` dots.
  */
+/**
+ * Approximate the QR module count (side length) from the payload length.
+ * Real QR versions grow with data: v1=21, v2=25, v3=29, ... (+4 per version).
+ * This matches the printer far better than a fixed 25 for short payloads, so
+ * the preview footprint tracks the real symbol size.
+ */
+function estimateQrModules(content: string): number {
+  const len = content.length;
+  // Rough alphanumeric capacities at ECC M per version (1..6).
+  const version =
+    len <= 20 ? 1 : len <= 38 ? 2 : len <= 61 ? 3 : len <= 90 ? 4 : len <= 122 ? 5 : 6;
+  return 21 + (version - 1) * 4;
+}
+
 function drawQrcode(ctx: CanvasRenderingContext2D, item: QrcodeItem) {
   ctx.save();
   applyRotation(ctx, item.x, item.y, item.rotation);
 
   const cell = Math.max(1, item.cellWidth);
-  const modules = 25; // approximate footprint in modules
+  const modules = estimateQrModules(item.content); // footprint tracks payload size
   const size = cell * modules;
 
   ctx.fillStyle = '#111827';

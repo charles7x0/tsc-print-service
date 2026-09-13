@@ -1,8 +1,13 @@
 import type {
+  CreateTemplateBody,
   PrintLabelBody,
   PrintResponse,
   ProbeResult,
   Settings,
+  StringTemplate,
+  TemplateData,
+  TemplatePreviewResponse,
+  UpdateTemplateBody,
 } from './types';
 
 /** Error carrying the server's structured message when a request fails. */
@@ -66,6 +71,57 @@ export const api = {
     return request<PrintResponse>('/api/print/raw', {
       method: 'POST',
       body: JSON.stringify({ commands }),
+    });
+  },
+
+  // ---- DB-stored TSPL templates ------------------------------------------
+
+  listTemplates(): Promise<StringTemplate[]> {
+    return request<StringTemplate[]>('/api/db-templates');
+  },
+
+  getTemplate(name: string): Promise<StringTemplate> {
+    return request<StringTemplate>(`/api/db-templates/${encodeURIComponent(name)}`);
+  },
+
+  createTemplate(body: CreateTemplateBody): Promise<StringTemplate> {
+    return request<StringTemplate>('/api/db-templates', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  updateTemplate(name: string, body: UpdateTemplateBody): Promise<StringTemplate> {
+    return request<StringTemplate>(`/api/db-templates/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  },
+
+  deleteTemplate(name: string): Promise<{ ok: true }> {
+    return request(`/api/db-templates/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  previewTemplate(name: string, data: TemplateData): Promise<TemplatePreviewResponse> {
+    return request<TemplatePreviewResponse>(
+      `/api/db-templates/${encodeURIComponent(name)}/preview`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ data }),
+      },
+    );
+  },
+
+  printTemplate(
+    name: string,
+    data: TemplateData,
+    copies = 1,
+  ): Promise<PrintResponse & { template: string }> {
+    return request(`/api/db-templates/${encodeURIComponent(name)}/print`, {
+      method: 'POST',
+      body: JSON.stringify({ data, copies }),
     });
   },
 };
