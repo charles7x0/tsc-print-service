@@ -38,6 +38,31 @@ function sampleData(variables: TemplateVariable[]): TemplateData {
   return data;
 }
 
+const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
+
+/** Distinct `{{placeholder}}` names in the source, in first-seen order. */
+function extractPlaceholders(source: string): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const m of source.matchAll(PLACEHOLDER_RE)) {
+    const name = m[1];
+    if (!seen.has(name)) {
+      seen.add(name);
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/** Shallow equality of two variable lists (name + required + sample + order). */
+function sameVariables(a: TemplateVariable[], b: TemplateVariable[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => {
+    const w = b[i];
+    return v.name === w.name && v.required === w.required && v.sample === w.sample;
+  });
+}
+
 /**
  * Load, edit, preview, save and print DB-stored TSPL templates.
  *
@@ -98,6 +123,25 @@ export function TemplatesPanel({ settings, onOutput, onStatus, onPreview }: Prop
     return () => window.clearTimeout(previewTimer.current);
   }, [draft.source, draft.variables, draft.geometry.dpmm, onPreview]);
 
+  // Auto-sync the Variables table to the {{placeholders}} used in the source.
+  // - New placeholders appear as rows automatically (required, no sample yet).
+  // - Placeholders removed from the source drop their row.
+  // - Existing rows keep their required/sample/description (edits are preserved).
+  // - A blank in-progress row (empty name) the user is typing is left alone.
+  useEffect(() => {
+    const used = extractPlaceholders(draft.source);
+    setDraft((d) => {
+      const byName = new Map(d.variables.map((v) => [v.name, v]));
+      // One row per used placeholder, preserving any existing settings.
+      const next: TemplateVariable[] = used.map(
+        (name) => byName.get(name) ?? { name, required: true },
+      );
+      // Skip the update if nothing actually changed (avoids a render loop).
+      if (sameVariables(d.variables, next)) return d;
+      return { ...d, variables: next };
+    });
+  }, [draft.source]);
+
   function selectTemplate(name: string) {
     if (name === '__new__') {
       setSelected('__new__');
@@ -120,17 +164,6 @@ export function TemplatesPanel({ settings, onOutput, onStatus, onPreview }: Prop
       ...d,
       variables: d.variables.map((v, i) => (i === index ? { ...v, ...patch } : v)),
     }));
-  }
-
-  function addVariable() {
-    setDraft((d) => ({
-      ...d,
-      variables: [...d.variables, { name: '', required: true }],
-    }));
-  }
-
-  function removeVariable(index: number) {
-    setDraft((d) => ({ ...d, variables: d.variables.filter((_, i) => i !== index) }));
   }
 
   // --- Actions ---------------------------------------------------------------
@@ -300,59 +333,51 @@ export function TemplatesPanel({ settings, onOutput, onStatus, onPreview }: Prop
       />
 
       <h3 className="visualizer-heading">Variables</h3>
-      <table className="variables-table">
-        <thead>
-          <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Required</th>
-            <th scope="col">Sample</th>
-            <th scope="col" aria-label="Actions" />
-          </tr>
-        </thead>
-        <tbody>
-          {draft.variables.map((v, i) => (
-            <tr key={i}>
-              <td>
-                <input
-                  type="text"
-                  value={v.name}
-                  aria-label={`Variable ${i + 1} name`}
-                  onChange={(e) => updateVariable(i, { name: e.target.value })}
-                />
-              </td>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={v.required}
-                  aria-label={`Variable ${i + 1} required`}
-                  onChange={(e) => updateVariable(i, { required: e.target.checked })}
-                />
-              </td>
-              <td>
-                <input
-                  type="text"
-                  value={v.sample === undefined ? '' : String(v.sample)}
-                  aria-label={`Variable ${i + 1} sample`}
-                  onChange={(e) => updateVariable(i, { sample: e.target.value })}
-                />
-              </td>
-              <td>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => removeVariable(i)}
-                  aria-label={`Remove variable ${i + 1}`}
-                >
-                  ✕
-                </button>
-              </td>
+      <p className="muted">
+        Detected from <code>{'{{placeholders}}'}</code> in the source. Add or
+        remove a variable by editing the TSPL above; set whether it is required
+        and a sample value used for the preview and test print.
+      </p>
+      {draft.variables.length === 0 ? (
+        <p className="muted empty-state">
+          No variables yet — type a <code>{'{{placeholder}}'}</code> in the source.
+        </p>
+      ) : (
+        <table className="variables-table">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Required</th>
+              <th scope="col">Sample</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <button type="button" className="secondary" onClick={addVariable}>
-        + Add variable
-      </button>
+          </thead>
+          <tbody>
+            {draft.variables.map((v, i) => (
+              <tr key={v.name || `row-${i}`}>
+                <th scope="row" className="variables-table__name">
+                  <code>{v.name}</code>
+                </th>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={v.required}
+                    aria-label={`${v.name} required`}
+                    onChange={(e) => updateVariable(i, { required: e.target.checked })}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={v.sample === undefined ? '' : String(v.sample)}
+                    aria-label={`${v.name} sample value`}
+                    onChange={(e) => updateVariable(i, { sample: e.target.value })}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <div className="button-row">
         <button type="button" className="primary" onClick={handleSave} disabled={busy || !draft.name}>
