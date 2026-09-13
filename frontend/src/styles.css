@@ -251,6 +251,27 @@ body {
 .status-pill--error { border-color: var(--err); background: var(--err-bg); color: var(--err); }
 .status-pill--error .status-pill__dot { background: var(--err); }
 
+/* Live reachability states (polled). */
+.status-pill--reachable { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+.status-pill--reachable .status-pill__dot { background: var(--ok); }
+.status-pill--unreachable { border-color: var(--err); background: var(--err-bg); color: var(--err); }
+.status-pill--unreachable .status-pill__dot { background: var(--err); }
+.status-pill--checking { border-color: var(--muted); background: var(--surface-2); color: var(--text-dim); }
+.status-pill--checking .status-pill__dot { background: var(--muted); }
+
+.status-pill__refresh {
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-2);
+  font-size: 0.85em;
+  line-height: 1.6;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.status-pill__refresh:hover { background: rgba(0, 0, 0, 0.06); }
+
 /* ---- Forms ---------------------------------------------------------------- */
 fieldset {
   border: 1px solid var(--border);
