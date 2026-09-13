@@ -20,6 +20,12 @@ export interface LabelGeometry {
   direction: 0 | 1;
   /** Mirror image: 0 = normal, 1 = mirrored left-right. */
   mirror: 0 | 1;
+  /**
+   * Optional origin reference in dots, emitted as `REFERENCE x,y` after
+   * DIRECTION. Omit to leave the printer default (0,0). Only set this when a
+   * template needs an explicit REFERENCE in its output.
+   */
+  reference?: { x: number; y: number };
 }
 
 /** Built-in printer bitmap font drawn with the TSPL TEXT command. */

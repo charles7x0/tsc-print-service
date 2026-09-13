@@ -92,6 +92,9 @@ export function buildLabel(spec: LabelSpec): string {
   lines.push(`SIZE ${geometry.widthMm} mm,${geometry.heightMm} mm`);
   lines.push(`GAP ${geometry.gapMm} mm,0 mm`);
   lines.push(`DIRECTION ${geometry.direction},${geometry.mirror}`);
+  if (geometry.reference) {
+    lines.push(`REFERENCE ${geometry.reference.x},${geometry.reference.y}`);
+  }
   lines.push('CLS');
   lines.push('CODEPAGE UTF-8');
 
