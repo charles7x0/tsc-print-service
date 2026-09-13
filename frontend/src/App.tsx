@@ -9,6 +9,7 @@ import { PrintPanel } from './components/PrintPanel';
 import { NavBar } from './components/NavBar';
 import { TsplVisualizer } from './components/TsplVisualizer';
 import { StatusPill, type ConnectionState } from './components/StatusPill';
+import { usePrinterStatus } from './hooks/usePrinterStatus';
 
 type StatusKind = 'ok' | 'err' | '';
 
@@ -24,6 +25,9 @@ export function App(): JSX.Element {
   const [statusMessage, setStatusMessage] = useState<string>('Reaching the server…');
   const [view, setView] = useState<ViewId>('print');
   const [preview, setPreview] = useState<PreviewState>({ source: '', dpmm: 8 });
+
+  // Live reachability (polled) — distinct from the dry-run/live mode.
+  const printerStatus = usePrinterStatus(settings);
 
   const onPreview = useCallback((source: string, dpmm: number) => {
     setPreview({ source, dpmm });
@@ -82,7 +86,16 @@ export function App(): JSX.Element {
             <p className="app-header__subtitle">TSPL label control</p>
           </div>
         </div>
-        <StatusPill state={connState} settings={settings} message={statusMessage} />
+        <StatusPill
+          state={connState}
+          settings={settings}
+          message={statusMessage}
+          reachability={printerStatus.reachability}
+          latencyMs={printerStatus.latencyMs}
+          reachError={printerStatus.error}
+          checkedAt={printerStatus.checkedAt}
+          onRefresh={printerStatus.refresh}
+        />
       </header>
 
       {settings ? (
