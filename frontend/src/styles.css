@@ -401,6 +401,15 @@ button.secondary.danger {
   width: 100%;
 }
 
+/* Read-only variable name cell (derived from the source placeholders). */
+.variables-table__name {
+  font-weight: 400;
+  text-align: left;
+}
+.variables-table__name code {
+  font-family: var(--mono);
+}
+
 /* ---- Output --------------------------------------------------------------- */
 .output pre {
   background: var(--surface-inset);
