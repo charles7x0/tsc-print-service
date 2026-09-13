@@ -6,6 +6,8 @@ import { Card } from './Card';
 
 interface Props {
   settings: Settings;
+  /** True when this panel is the visible view (drives the shared preview). */
+  active: boolean;
   onOutput: (data: unknown) => void;
   onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
   /** Push a TSPL preview to the shared right-rail visualizer. */
@@ -17,7 +19,7 @@ interface Props {
  * live preview, and print. This is the 90% daily case, so it stays intentionally
  * calm — no TSPL editor, no geometry dot-coordinates. Authoring lives elsewhere.
  */
-export function PrintPanel({ settings, onOutput, onStatus, onPreview }: Props): JSX.Element {
+export function PrintPanel({ settings, active, onOutput, onStatus, onPreview }: Props): JSX.Element {
   const [templates, setTemplates] = useState<StringTemplate[]>([]);
   const [selected, setSelected] = useState<string>('');
   const [values, setValues] = useState<TemplateData>({});
@@ -66,8 +68,10 @@ export function PrintPanel({ settings, onOutput, onStatus, onPreview }: Props): 
   }, [current]);
 
   // Local preview substitution pushed to the shared right-rail visualizer;
-  // mirrors the server engine closely enough for a placement preview.
+  // mirrors the server engine closely enough for a placement preview. Only the
+  // active view drives the shared preview.
   useEffect(() => {
+    if (!active) return;
     if (!current) {
       onPreview('', settings.label.dpmm);
       return;
@@ -80,7 +84,7 @@ export function PrintPanel({ settings, onOutput, onStatus, onPreview }: Props): 
       },
     );
     onPreview(local, current.geometry.dpmm);
-  }, [current, values, onPreview, settings.label.dpmm]);
+  }, [active, current, values, onPreview, settings.label.dpmm]);
 
   const setValue = useCallback((name: string, value: string) => {
     setValues((prev) => ({ ...prev, [name]: value }));

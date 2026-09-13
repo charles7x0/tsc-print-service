@@ -7,6 +7,8 @@ import { Fieldset, NumberField, SelectField, TextField } from './Field';
 
 interface Props {
   settings: Settings;
+  /** True when this panel is the visible view (drives the shared preview). */
+  active: boolean;
   onOutput: (data: unknown) => void;
   onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
   /** Push a TSPL preview to the shared right-rail visualizer. */
@@ -20,7 +22,7 @@ const rotationOptions: { value: Rotation; label: string }[] = [
   { value: 270, label: '270' },
 ];
 
-export function CustomLabelPanel({ settings, onOutput, onStatus, onPreview }: Props) {
+export function CustomLabelPanel({ settings, active, onOutput, onStatus, onPreview }: Props) {
   // Geometry seeded from settings; kept in sync when settings change.
   const [width, setWidth] = useState(settings.label.widthMm);
   const [height, setHeight] = useState(settings.label.heightMm);
@@ -49,8 +51,9 @@ export function CustomLabelPanel({ settings, onOutput, onStatus, onPreview }: Pr
   }, [settings]);
 
   // Push an approximate TSPL preview built from the current form state to the
-  // shared right-rail visualizer.
+  // shared right-rail visualizer. Only the active view drives the preview.
   useEffect(() => {
+    if (!active) return;
     const tspl = [
       `SIZE ${width} mm,${height} mm`,
       `GAP ${gap} mm,0 mm`,
@@ -63,6 +66,7 @@ export function CustomLabelPanel({ settings, onOutput, onStatus, onPreview }: Pr
     ].join('\n');
     onPreview(tspl, settings.label.dpmm);
   }, [
+    active,
     width, height, gap, direction,
     text, tx, ty, tRot,
     bData, bType, bx, by, bHeight, bRot,
