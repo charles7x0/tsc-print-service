@@ -1,4 +1,4 @@
-import type { BarcodeItem, LabelItem, ParsedLabel, QrcodeItem, TextItem } from './parse';
+import type { BarcodeItem, DmatrixItem, LabelItem, ParsedLabel, QrcodeItem, TextItem } from './parse';
 
 /**
  * Render an approximate preview of a parsed TSPL label onto a canvas.
@@ -100,6 +100,9 @@ function drawItem(ctx: CanvasRenderingContext2D, item: LabelItem) {
       break;
     case 'qrcode':
       drawQrcode(ctx, item);
+      break;
+    case 'dmatrix':
+      drawDmatrix(ctx, item);
       break;
     case 'bar':
       ctx.fillRect(item.x, item.y, item.width, item.height);
@@ -256,6 +259,50 @@ function drawQrcode(ctx: CanvasRenderingContext2D, item: QrcodeItem) {
       const code = chars[(r * modules + c) % Math.max(1, chars.length)]?.charCodeAt(0) ?? 0;
       if ((code + r * 3 + c * 7) % 2 === 0) {
         ctx.fillRect(c * cell, r * cell, cell, cell);
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Draw a DataMatrix placeholder. Like the QR placeholder, this is NOT a real
+ * encoder — it renders a symbol with DataMatrix's characteristic "L" solid
+ * finder (left + bottom edges) and a dashed timing pattern (top + right edges),
+ * plus a pseudo-random data fill. It occupies the same width x height footprint
+ * the printer will use, so the preview reveals size and collisions.
+ */
+function drawDmatrix(ctx: CanvasRenderingContext2D, item: DmatrixItem) {
+  ctx.save();
+
+  const area = Math.max(1, Math.min(item.width, item.height));
+  // Approximate module count from the payload (even, 10..32 is typical).
+  const dataLen = (item.content || '0').length;
+  const modules = Math.min(32, Math.max(10, Math.ceil(Math.sqrt(dataLen) + 8) * 2 - 2));
+  const cell = area / modules;
+
+  ctx.fillStyle = '#111827';
+
+  // Solid "L" finder: full left column and full bottom row.
+  ctx.fillRect(item.x, item.y, cell, area); // left edge
+  ctx.fillRect(item.x, item.y + area - cell, area, cell); // bottom edge
+
+  // Dashed timing pattern: top row and right column (alternating modules).
+  for (let i = 0; i < modules; i++) {
+    if (i % 2 === 0) {
+      ctx.fillRect(item.x + i * cell, item.y, cell, cell); // top edge
+      ctx.fillRect(item.x + area - cell, item.y + i * cell, cell, cell); // right edge
+    }
+  }
+
+  // Pseudo-random data fill inside, deterministic per content.
+  const chars = (item.content || '0').split('');
+  for (let r = 1; r < modules - 1; r++) {
+    for (let c = 1; c < modules - 1; c++) {
+      const code = chars[(r * modules + c) % Math.max(1, chars.length)]?.charCodeAt(0) ?? 0;
+      if ((code + r * 5 + c * 3) % 2 === 0) {
+        ctx.fillRect(item.x + c * cell, item.y + r * cell, cell, cell);
       }
     }
   }

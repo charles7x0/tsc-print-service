@@ -52,6 +52,17 @@ export interface QrcodeItem {
   content: string;
 }
 
+export interface DmatrixItem {
+  kind: 'dmatrix';
+  x: number;
+  y: number;
+  /** Expected width of the barcode area in dots. */
+  width: number;
+  /** Expected height of the barcode area in dots. */
+  height: number;
+  content: string;
+}
+
 export interface BoxItem {
   kind: 'box';
   x: number;
@@ -69,7 +80,7 @@ export interface BarItem {
   height: number;
 }
 
-export type LabelItem = TextItem | BarcodeItem | QrcodeItem | BoxItem | BarItem;
+export type LabelItem = TextItem | BarcodeItem | QrcodeItem | DmatrixItem | BoxItem | BarItem;
 
 export interface ParsedLabel {
   size: LabelSize | null;
@@ -229,6 +240,21 @@ export function parseTspl(source: string, dpmm: number = DEFAULT_DPMM): ParsedLa
           y: num(a[1]),
           cellWidth: num(a[3], 4),
           rotation: toRotation(num(a[5])),
+          content,
+        });
+        break;
+      }
+      case 'DMATRIX': {
+        const a = splitArgs(rest);
+        // DMATRIX x,y,width,height,[options,]"content"
+        // Content is always the last argument.
+        const content = unquote(a[a.length - 1] ?? '""');
+        result.items.push({
+          kind: 'dmatrix',
+          x: num(a[0]),
+          y: num(a[1]),
+          width: num(a[2], 100),
+          height: num(a[3], 100),
           content,
         });
         break;
