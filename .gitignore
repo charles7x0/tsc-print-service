@@ -14,3 +14,10 @@ frontend/dist/
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Corporate/proxy root CA used only for local Docker builds behind a
+# TLS-inspection proxy (e.g. Zscaler). Not committed — provide it locally.
+# The directory itself is kept (via .gitkeep) so the Docker build context works.
+certs/*
+!certs/.gitkeep
+buildkitd.toml
