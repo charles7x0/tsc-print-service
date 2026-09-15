@@ -1,63 +1,65 @@
-# TSC Printer Server
+<div align="center">
 
-A cross-platform HTTP server for **TSC label printers**, written in TypeScript.
-It talks to the printer using **raw TSPL over TCP (port 9100)** — there is **no
-native DLL and no `edge-js`**, so it runs the same on **Linux, Windows, and ARM**
-(Raspberry Pi, Apple Silicon, containers).
+[![License][badge-license]][link-license]
 
-It ships with:
+<br/>
 
-- A typed **TSPL command builder** (text, barcodes, raw commands).
-- **Stored, editable templates**: raw TSPL with `{{placeholders}}` saved in the
-  database, printed via the API by name with your data — create/edit them in the
-  browser or over the API.
-- An **HTTP API** to print from a template, a built-in test label, a custom
-  label, or raw TSPL.
-- A **React frontend** (Vite + TypeScript) to author templates, fill and print
-  them, and preview the label live.
-- A **dry-run mode** that returns the TSPL (downloaded by the UI) so you can test
-  with **no printer**.
-- **SQLite-backed settings and templates**: printer/label configuration and label
-  templates are stored in a database and editable at runtime — only `PORT`/`HOST`
-  stay in `.env`.
+### TSC Printer Server
 
----
+Cross-platform HTTP server for TSC label printers — raw TSPL over TCP, no native DLL
 
-## Table of contents
+<br/>
 
-- [Why no DLL?](#why-no-dll)
-- [Architecture](#architecture)
-- [Requirements](#requirements)
-- [Getting started](#getting-started)
-- [Configuration](#configuration)
-  - [Environment (`.env`)](#environment-env)
-  - [Settings (SQLite)](#settings-sqlite)
-- [Commands](#commands)
-- [HTTP API](#http-api)
-- [Coordinates and orientation](#coordinates-and-orientation)
-- [Testing](#testing)
+[![Node.js][badge-nodejs]][link-nodejs]
+[![Express][badge-express]][link-express]
+[![TypeScript][badge-typescript]][link-typescript]
+[![React][badge-react]][link-react]
+[![SQLite][badge-sqlite]][link-sqlite]
+[![Vitest][badge-vitest]][link-vitest]
+
+</div>
+
+## Quick Start
+
+Check out the [Getting Started](#getting-started) section for full instructions.
+
+1. `npm install && npm run frontend:install`
+2. `cp .env.example .env`
+3. `npm run build:all`
+4. `npm start`
+
+<br/>
+
+> [!NOTE]
+> TSC Printer Server talks to TSC label printers using raw **TSPL over TCP (port 9100)** — there is no native DLL and no `edge-js`, so it runs the same on Linux, Windows, and ARM (Raspberry Pi, Apple Silicon, containers). It ships with a typed TSPL builder, stored editable templates, an HTTP API, a React frontend, and a dry-run mode so you can test with no printer.
+
+## Features
+
+- **TSPL Command Builder** — Typed builder for text, barcodes, and raw commands, with escaping that is safe against command injection
+- **Stored, Editable Templates** — Raw TSPL with `{{placeholders}}` saved in SQLite, printed by name with your data; author them in the browser or over the API
+- **Template-Driven Printing** — Code-defined templates that own layout, coordinate maths, and DPI scaling so the same request prints on any label size or printhead
+- **HTTP API** — Print from a stored template, a code template, a built-in test label, a custom label, or raw TSPL
+- **React Frontend** — Vite + TypeScript UI to author templates, fill and print them, and preview the label live
+- **Dry-Run Mode** — Returns the generated TSPL (downloaded by the UI) so you can test with no hardware
+- **SQLite-Backed Settings & Templates** — Printer/label configuration and label templates are stored in a database and editable at runtime; only `PORT`/`HOST` stay in `.env`
+- **Docker Support** — Three-stage Alpine-based image (~189 MB) for amd64 and arm64
+
+## Links
+
+- [Getting Started](#getting-started)
 - [Docker](#docker)
+- [Configuration](#configuration)
+- [API Reference](#api-reference)
+- [Architecture](#architecture)
+- [Coordinates and Orientation](#coordinates-and-orientation)
+- [Project Structure](#project-structure)
+- [Tech Stack](#tech-stack)
+- [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 - [License](#license)
 
----
-
-## Why no DLL?
-
-The original TSC sample used `tsclibnet.dll` via `edge-js`. That approach is
-Windows-only and breaks whenever the Node.js version changes (the `edge.node`
-native binary must be pre-compiled for each Node release). TSC printers accept
-plain **TSPL** over a TCP socket, so this project generates TSPL and sends it
-directly. That removes every native dependency and makes the server portable
-across operating systems and CPU architectures.
-
----
-
 ## Architecture
-
-The server is organised in clear layers. Each layer depends only on the one
-below it, and the printer connection is behind an interface so the whole stack
-is testable without hardware.
 
 ```
                     React app (frontend/, Vite + TS)
@@ -96,88 +98,65 @@ is testable without hardware.
                      SQLite (./data/settings.db)
 ```
 
+**Key design decisions:**
+
+- **Transport is an interface** (`PrinterTransport`) — tests inject a fake transport, so the API is exercised end-to-end without touching a printer
+- **Printing is template-driven** — each code template pairs a zod `dataSchema` with a `render(data, { geometry, dpmm }) → LabelSpec`; geometry comes from settings, not the payload, so the same request prints on any stock/printhead
+- **Settings live in SQLite**, not the environment — validated on every read/write with zod, applied transactionally, and read live so changes take effect without a restart
+- **Only `PORT`/`HOST` come from `.env`** (`config.ts` with zod) — invalid values fail fast at startup with a readable message
+- **The app factory is separate from server start** (`createApp` vs `index.ts`) so `supertest` can mount the app in-process
+- **ESM throughout**, targeting modern Node, with no runtime transpilation quirks
+
 ### Request flow (example: `POST /api/print`)
 
 1. A client sends `POST /api/print` with `{ "template": "defect-tag", "data": {...} }`.
-2. `routes.ts` validates the envelope (`schemas.ts`), then asks the
-   **template registry** to render: it looks up the template (404 if unknown),
-   validates `data` against that template's own zod schema (400 with field
-   issues if invalid), and calls its `render(data, { geometry, dpmm })`.
-3. The template computes a `LabelSpec` from the label geometry/DPI (owned by
-   settings, not the payload) — so it scales to any label size.
-4. `builder.ts` turns the `LabelSpec` into a TSPL string; the service hands it
-   to the configured **transport**:
-   - `NetworkTransport` opens a TCP socket to the printer and writes the bytes.
-   - `DryRunTransport` returns the TSPL without touching hardware; the web UI
-     downloads it as a `.prn` file.
-5. The response returns `{ ok, template, result, tspl }` — including the exact
-   TSPL sent, handy for debugging and previewing.
+2. `routes.ts` validates the envelope (`schemas.ts`), then asks the **template registry** to render: it looks up the template (404 if unknown), validates `data` against that template's own zod schema (400 with field issues if invalid), and calls its `render(data, { geometry, dpmm })`.
+3. The template computes a `LabelSpec` from the label geometry/DPI (owned by settings, not the payload) — so it scales to any label size.
+4. `builder.ts` turns the `LabelSpec` into a TSPL string; the service hands it to the configured **transport**: `NetworkTransport` opens a TCP socket to the printer and writes the bytes, while `DryRunTransport` returns the TSPL without touching hardware (the web UI downloads it as a `.prn` file).
+5. The response returns `{ ok, template, result, tspl }` — including the exact TSPL sent, handy for debugging and previewing.
 
-### Design choices
+## Getting Started
 
-- **Transport is an interface** (`PrinterTransport`). Tests inject a fake
-  transport, so the API is exercised end-to-end without touching a printer.
-- **Printing is template-driven**. Each template is a `TemplateDefinition` with
-  a zod `dataSchema` and a `render(data, { geometry, dpmm }) → LabelSpec`.
-  Callers send business data and a template name; the server owns layout,
-  coordinate maths, and DPI scaling. Geometry comes from printer/label settings
-  (not the payload), so the same request prints on any stock/printhead. New
-  templates are added by creating a file under `src/templates/` and registering
-  it in `createDefaultRegistry()`; no route changes needed.
-- **Settings live in SQLite**, not the environment. The `SettingsRepository`
-  seeds defaults on first run, validates every read/write with zod, and applies
-  updates transactionally. Prints read settings live, so changes take effect
-  without a restart. Tests use an in-memory database (`:memory:`).
-- **Only `PORT`/`HOST` come from `.env`** (`config.ts` with zod). Invalid values
-  fail fast at startup with a readable message.
-- **The app factory is separate from server start** (`createApp` vs `index.ts`),
-  so `supertest` can mount the app in-process for integration tests.
-- **ESM throughout**, targeting modern Node. No transpilation quirks at runtime.
+### Prerequisites
 
----
+- **Node.js** 18+ (developed and verified on Node 22)
+- A **TSC printer** reachable over the network — or use **dry-run mode** for no hardware
 
-## Requirements
-
-- Node.js **>= 18** (developed and verified on Node 22).
-- A TSC printer reachable over the network — or use **dry-run mode** for no hardware.
-
----
-
-## Getting started
-
-Install and set up the environment:
+### Install
 
 ```bash
+# Install server dependencies
 npm install
-npm run frontend:install          # installs the React app's dependencies
-cp .env.example .env              # Windows PowerShell: Copy-Item .env.example .env
+
+# Install the React app's dependencies
+npm run frontend:install
+
+# Copy the environment file (PowerShell: Copy-Item .env.example .env)
+cp .env.example .env
 ```
 
-**Production-style (server serves the built React app):**
+### Build
 
 ```bash
-npm run frontend:build            # builds the React app into public/
-npm run build                     # compiles the server into dist/
-npm start                         # serves API + frontend on one port
+# Build the React app into public/
+npm run frontend:build
+
+# Compile the server into dist/
+npm run build
+
+# Or build both in one command
+npm run build:all
 ```
 
-Open <http://localhost:8080> (or the `PORT` in your `.env`).
-
-**Development (two processes, with hot reload):**
+### Run
 
 ```bash
-npm run dev                       # terminal 1: API server (tsx watch)
-npm run frontend:dev              # terminal 2: Vite dev server on :5173
+npm start
 ```
 
-Open <http://localhost:5173>. The Vite dev server proxies `/api` to the API
-server, so both hot-reload independently.
+The server starts on port 8080 (or the `PORT` in your `.env`). Open `http://localhost:8080` for the web UI.
 
-On first run the server creates `./data/settings.db` and seeds default settings,
-including `dryRun = true` — so nothing needs a printer. In dry-run the generated
-TSPL is returned in the API response and the web UI downloads it as a `.prn`
-file (nothing is saved on the server). To print for real, turn off dry-run and
-set the printer IP via the settings API (or the web UI):
+On first run the server creates `./data/settings.db` and seeds default settings, including `dryRun = true` — so nothing needs a printer. In dry-run the generated TSPL is returned in the API response and the web UI downloads it as a `.prn` file. To print for real, turn off dry-run and set the printer IP via the settings API (or the web UI):
 
 ```bash
 curl -X PUT http://localhost:8080/api/settings \
@@ -185,37 +164,92 @@ curl -X PUT http://localhost:8080/api/settings \
   -d '{"printer":{"dryRun":false,"ip":"192.168.0.50"}}'
 ```
 
----
+### Development
+
+```bash
+# Start the API in watch mode (hot-reload via tsx)
+npm run dev
+
+# Start the web UI dev server (HMR via Vite on :5173)
+npm run frontend:dev
+
+# Type-check without emitting files
+npm run typecheck
+
+# Lint src and tests with ESLint
+npm run lint
+
+# Run all tests
+npm test
+```
+
+Open `http://localhost:5173`. The Vite dev server proxies `/api` to the API server, so both hot-reload independently.
+
+## Docker
+
+Build and run as a container (includes API and web UI). Mount a volume for `/app/data` so the settings database survives restarts:
+
+```bash
+# Build the image
+docker build -t tsc-printer-server .
+
+# Run with default settings
+docker run --rm -p 8080:8080 -v tsc_data:/app/data tsc-printer-server
+```
+
+Then configure the printer at runtime via the settings API:
+
+```bash
+curl -X PUT http://localhost:8080/api/settings \
+  -H "Content-Type: application/json" \
+  -d '{"printer":{"dryRun":false,"ip":"192.168.0.50"}}'
+```
+
+For multi-platform builds (amd64 + arm64):
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t tsc-printer-server .
+```
+
+The image is a three-stage build on `node:22-alpine` (Node 22 satisfies `better-sqlite3@13`'s `engines: node >=22`):
+
+- **`deps`** installs production dependencies only, including the native `better-sqlite3` binary, then trims its compile-time sources and the prebuilt binaries for platforms other than Alpine (musl).
+- **`build`** compiles the server TypeScript **and** builds the React frontend into `public/`.
+- **`runtime`** copies just the trimmed `node_modules`, `dist/`, and `public/`. It ships **no build tools**, runs as the non-root `node` user, declares a `data` volume, and includes a `HEALTHCHECK` that polls `/api/health` (using Node's `fetch`, so no `curl`/`wget` is added). It binds to `0.0.0.0` so the port maps correctly. Final size is ~189 MB.
+
+### Building Behind a TLS-Inspection Proxy
+
+Compiling/fetching the `better-sqlite3` native binary reaches out to `nodejs.org` / `github.com` over HTTPS. If your network re-signs TLS traffic (e.g., Zscaler), those requests fail certificate verification. To fix it **without disabling TLS verification**:
+
+1. Export your proxy's root CA (PEM) and drop it into `certs/` as a `.crt` file (the folder is kept via `certs/.gitkeep`; real certs are gitignored).
+
+2. Build normally — the builder stages install that CA into their trust store and expose it to Node via `NODE_EXTRA_CA_CERTS`. The CA is **never** included in the runtime image.
+
+> [!NOTE]
+> For registry pulls behind the same proxy, point BuildKit at the CA with a `buildkitd.toml` (`[registry."docker.io"] ca=[...]`) when creating your builder.
 
 ## Configuration
 
 Configuration is split in two:
 
 - **Environment (`.env`)** — only how the HTTP server binds.
-- **Settings (SQLite)** — printer connection and label defaults, editable at
-  runtime through the [settings API](#get-apisettings).
+- **Settings (SQLite)** — printer connection and label defaults, editable at runtime through the [settings API](#settings).
 
-### Environment (`.env`)
+### Environment Variables
 
-See [`.env.example`](./.env.example).
+See [`.env.example`](./.env.example). Invalid values (e.g. a non-numeric `PORT`) cause the server to exit at startup with a description of what failed.
 
 | Variable | Default | Description |
-|---|---|---|
+|----------|---------|-------------|
 | `PORT` | `8080` | HTTP port |
 | `HOST` | `0.0.0.0` | Bind address (`0.0.0.0` = all interfaces, needed in Docker) |
 
-Invalid values (e.g. a non-numeric `PORT`) cause the server to exit at startup
-with a description of what failed.
-
 ### Settings (SQLite)
 
-Stored in `./data/settings.db` (created and seeded on first run). Read with
-`GET /api/settings`; change with `PUT /api/settings` (partial updates are merged
-and validated). Every value is validated on read and write, so a corrupted or
-hand-edited database surfaces a clear error rather than misbehaving.
+Stored in `./data/settings.db` (created and seeded on first run). Read with `GET /api/settings`; change with `PUT /api/settings` (partial updates are merged and validated). Every value is validated on read and write, so a corrupted or hand-edited database surfaces a clear error rather than misbehaving.
 
 | Setting | Default | Description |
-|---|---|---|
+|---------|---------|-------------|
 | `printer.ip` | `192.168.0.50` | Printer IP address |
 | `printer.port` | `9100` | Raw TSPL port (standard for TSC network printers) |
 | `printer.timeoutMs` | `5000` | Socket connect/write timeout |
@@ -227,61 +261,47 @@ hand-edited database surfaces a clear error rather than misbehaving.
 | `label.mirror` | `0` | `0` normal, `1` mirrored |
 | `label.dpmm` | `8` | Dots per mm: `8` = 203 dpi, `11.8` = 300 dpi, `24` = 600 dpi |
 
-To reset all settings to defaults, stop the server and delete `./data/settings.db`;
-it will be recreated on the next start.
+To reset all settings to defaults, stop the server and delete `./data/settings.db`; it will be recreated on the next start.
 
----
+## API Reference
 
-## Commands
+Base path: `/api`. All print endpoints return `{ ok, result, tspl }`, where `tspl` is the exact program sent to the printer and `result` reports the mode (`network` or `dry-run`) and bytes sent.
 
-| Command | Purpose |
-|---|---|
-| `npm install` | Install server dependencies |
-| `npm run frontend:install` | Install frontend (React) dependencies |
-| `npm run dev` | Run the API server with hot reload (tsx) |
-| `npm run frontend:dev` | Run the Vite dev server (React) on port 5173 |
-| `npm run frontend:build` | Build the React app into `public/` |
-| `npm run build` | Compile the server TypeScript to `dist/` |
-| `npm run build:all` | Build frontend + server in one command |
-| `npm start` | Run the compiled server from `dist/` (serves API + frontend) |
-| `npm test` | Run the full test suite once (vitest) |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run typecheck` | Type-check without emitting files |
-| `npm run lint` | Lint the `src` and `tests` with ESLint |
+### Health & Settings
 
-Typical local loop:
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Liveness check — returns `{ "status": "ok", "dryRun": <bool> }` |
+| GET | `/api/config` | Compact view of current settings |
+| GET | `/api/settings` | Full current settings object |
+| PUT | `/api/settings` | Partial update — merged, validated, persisted; returns `{ ok, settings }` |
 
-```bash
-npm run dev            # terminal 1: API server
-npm run frontend:dev   # terminal 2: React app
-npm run typecheck      # verify server types
-npm test               # verify server behaviour
-npm run build:all      # produce a deployable build
+`GET /api/settings` returns:
+
+```json
+{
+  "printer": { "ip": "192.168.0.50", "port": 9100, "timeoutMs": 5000, "dryRun": true },
+  "label": { "widthMm": 45, "heightMm": 75, "gapMm": 3, "direction": 0, "mirror": 0, "dpmm": 8 }
+}
 ```
 
----
+### Stored Templates (`/api/db-templates`)
 
-## HTTP API
+User-editable templates stored in SQLite. A template is **raw TSPL with `{{placeholders}}`** plus a **variable manifest** (name, required, sample). This is the path used by the web UI's template editor — the most flexible way to author labels, editing the TSPL directly with no code changes.
 
-Base path: `/api`. All print endpoints return `{ ok, result, tspl }`, where
-`tspl` is the exact program sent to the printer and `result` reports the mode
-(`network` or `dry-run`) and bytes sent.
+On save, a template is validated: it must contain `SIZE` and `PRINT`, use a `GAP`/`BLINE`, and every `{{placeholder}}` must be a declared variable (and vice versa). At print/preview time, every supplied value is escaped so caller data can never break out of a quoted argument or inject extra commands, and the output is normalised to CRLF line endings (required by TSPL).
 
-### Send a print over the API (quickstart)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/db-templates` | List all templates (name, description, source, variables, geometry) |
+| GET | `/api/db-templates/:name` | Get one template |
+| POST | `/api/db-templates` | Create a template |
+| PUT | `/api/db-templates/:name` | Update a template |
+| DELETE | `/api/db-templates/:name` | Delete a template |
+| POST | `/api/db-templates/:name/preview` | Render to TSPL **without** printing |
+| POST | `/api/db-templates/:name/print` | Render and send to the printer |
 
-The recommended way to print is to **store a template once**, then **print it
-many times** with different data. A template is raw TSPL with `{{placeholders}}`;
-you supply values at print time. The server substitutes, escapes, and sends.
-
-A ready-to-use template, `tad-inspecao-defect-taxa`, is seeded on first run.
-
-**1. (Optional) list the available templates and their variables:**
-
-```bash
-curl http://localhost:8080/api/db-templates
-```
-
-**2. Print it — pass a value for each declared variable:**
+A ready-to-use template, `tad-inspecao-defect-taxa`, is seeded on first run. Print it by passing a value for each declared variable:
 
 ```bash
 curl -X POST http://localhost:8080/api/db-templates/tad-inspecao-defect-taxa/print \
@@ -321,66 +341,7 @@ Invoke-RestMethod -Uri http://localhost:8080/api/db-templates/tad-inspecao-defec
   -Method POST -ContentType 'application/json' -Body $body
 ```
 
-The response is `{ ok, template, copies, result, tspl }`. In **dry-run** mode
-(`printer.dryRun = true`, the default) nothing is sent to hardware — the `tspl`
-is returned so you can inspect or save it. To print for real, set
-`printer.dryRun = false` and a valid `printer.ip` (see [Configuration](#settings-sqlite)).
-
-> Prefer **preview before printing** while iterating: `POST
-> /api/db-templates/:name/preview` returns the rendered `tspl` **without**
-> sending it to the printer.
-
-There are two other ways to print, covered below: the code-defined
-[template registry](#template-driven-printing-code-templates) (`POST /api/print`)
-and [raw TSPL](#post-apiprintraw).
-
-### `GET /api/health`
-Liveness check. Returns `{ "status": "ok", "dryRun": <bool> }`.
-
-### `GET /api/config`
-A compact view of current settings. (The React frontend uses `GET /api/settings`
-to populate its forms.)
-
-### `GET /api/settings`
-The full current settings object:
-```json
-{
-  "printer": { "ip": "192.168.0.50", "port": 9100, "timeoutMs": 5000, "dryRun": true },
-  "label": { "widthMm": 45, "heightMm": 75, "gapMm": 3, "direction": 0, "mirror": 0, "dpmm": 8 }
-}
-```
-
-### `PUT /api/settings`
-Partial update — send only the fields you want to change. Merged into the
-current settings, validated, and persisted. Returns `{ ok, settings }`.
-```json
-{ "printer": { "dryRun": false, "ip": "10.0.0.5" }, "label": { "widthMm": 100 } }
-```
-
-### Stored templates (`/api/db-templates`)
-
-User-editable templates stored in SQLite. A template is **raw TSPL with
-`{{placeholders}}`** plus a **variable manifest** (name, required, sample). This
-is the path used by the web UI's template editor and the quickstart above. It is
-the most flexible way to author labels — edit the TSPL directly, no code changes.
-
-On save, a template is validated: it must contain `SIZE` and `PRINT`, use a
-`GAP`/`BLINE`, and every `{{placeholder}}` must be a declared variable (and vice
-versa). At print/preview time, every supplied value is escaped so caller data can
-never break out of a quoted argument or inject extra commands, and the output is
-normalised to CRLF line endings (required by TSPL).
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/db-templates` | List all templates (name, description, source, variables, geometry) |
-| GET | `/api/db-templates/:name` | Get one template |
-| POST | `/api/db-templates` | Create a template |
-| PUT | `/api/db-templates/:name` | Update a template |
-| DELETE | `/api/db-templates/:name` | Delete a template |
-| POST | `/api/db-templates/:name/preview` | Render to TSPL **without** printing |
-| POST | `/api/db-templates/:name/print` | Render and send to the printer |
-
-**Create a template:**
+Create a template:
 
 ```bash
 curl -X POST http://localhost:8080/api/db-templates \
@@ -394,50 +355,25 @@ curl -X POST http://localhost:8080/api/db-templates \
   }'
 ```
 
-**Preview (no printing) — returns `{ ok, name, tspl }`:**
+Preview (no printing) returns `{ ok, name, tspl }`; print returns `{ ok, template, copies, result, tspl }`.
 
-```bash
-curl -X POST http://localhost:8080/api/db-templates/hello/preview \
-  -H "Content-Type: application/json" \
-  -d '{ "data": { "title": "World" } }'
-```
+**Errors:**
 
-**Print — returns `{ ok, template, copies, result, tspl }`:**
+- `404 TemplateNotFound` — no template with that name
+- `409 TemplateExists` — creating a name that already exists
+- `400 TemplateValidationError` — the TSPL/manifest is invalid (`issues[]` lists each problem, e.g. `missing-print`, `undeclared-variable`)
+- `400 MissingVariables` — a required variable had no value (`missing[]` names them)
 
-```bash
-curl -X POST http://localhost:8080/api/db-templates/hello/print \
-  -H "Content-Type: application/json" \
-  -d '{ "data": { "title": "World" } }'
-```
+### Template-Driven Printing (Code Templates)
 
-Errors:
-- `404 TemplateNotFound` — no template with that name.
-- `409 TemplateExists` — creating a name that already exists.
-- `400 TemplateValidationError` — the TSPL/manifest is invalid (`issues[]` lists
-  each problem, e.g. `missing-print`, `undeclared-variable`).
-- `400 MissingVariables` — a required variable had no value (`missing[]` names them).
+Code-defined templates compiled into the server. The caller sends **business data** and names a **template**; the server owns all layout, coordinate maths, and DPI scaling. The caller never sends dots, positions, or geometry — those come from the printer/label configuration, so the same request prints correctly on a 203 or 300 dpi printer.
 
-### Template-driven printing (code templates)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/templates` | List code templates and a best-effort description of each template's `data` fields |
+| POST | `/api/print` | Canonical print endpoint — select a template by name and pass its `data` |
 
-An alternative to stored templates: **code-defined** templates compiled into the
-server. The caller sends **business data** and names a **template**; the server
-owns all layout, coordinate maths, and DPI scaling. The caller never sends dots,
-positions, or geometry — those come from the printer/label configuration, so the
-same request prints correctly on a 203 or 300 dpi printer. Use stored templates
-(above) unless you specifically want computed-geometry layouts in code.
-
-#### `GET /api/templates`
-List the available templates and a best-effort description of each template's
-expected `data` fields (for building a form in the UI).
-```json
-[
-  { "name": "defect-tag", "description": "...", "dataSchema": { "type": "object", "fields": { "...": {} } } },
-  { "name": "simple-label", "description": "...", "dataSchema": { "...": {} } }
-]
-```
-
-#### `POST /api/print`
-The canonical print endpoint. Select a template by name and pass its `data`.
+`POST /api/print` example:
 
 ```json
 {
@@ -454,42 +390,33 @@ The canonical print endpoint. Select a template by name and pass its `data`.
 }
 ```
 
-Flow: look up the template → validate `data` against the template's schema →
-resolve geometry + DPI from settings → render to a `LabelSpec` → build TSPL →
-send. Returns `{ ok, template, result, tspl }`.
+Flow: look up the template → validate `data` against the template's schema → resolve geometry + DPI from settings → render to a `LabelSpec` → build TSPL → send. Returns `{ ok, template, result, tspl }`.
 
-Errors:
-- `404 UnknownTemplate` — the `template` name is not registered (response
-  includes `available` template names).
-- `400 TemplateValidationError` — `data` failed the template's schema
-  (response includes `issues` listing the offending fields).
+**Errors:**
 
-Built-in templates:
-- **`defect-tag`** — QR + id + timestamp header, one proportional gauge per row,
-  footer. `data`: `id`, `timestamp`, `gauges[]` (`label`, `value`, optional
-  `max`), optional `qrData`, `footer`, `direction`.
-- **`simple-label`** — `data`: `lines[]` (text) and an optional `barcode`
-  (`data`, `type`, `readable`), optional `copies`.
+- `404 UnknownTemplate` — the `template` name is not registered (response includes `available` template names)
+- `400 TemplateValidationError` — `data` failed the template's schema (response includes `issues` listing the offending fields)
 
-Adding a template: create a `TemplateDefinition` (name, description, zod
-`dataSchema`, and a `render(data, { geometry, dpmm }) => LabelSpec`) under
-`src/templates/`, then register it in `createDefaultRegistry()`. The layout maths
-lives in the render function (e.g. `buildDefectTagSpec`), so it scales to any
-label size by construction.
+**Built-in code templates:**
 
-### Legacy print endpoints
+- **`defect-tag`** — QR + id + timestamp header, one proportional gauge per row, footer. `data`: `id`, `timestamp`, `gauges[]` (`label`, `value`, optional `max`), optional `qrData`, `footer`, `direction`.
+- **`simple-label`** — `data`: `lines[]` (text) and an optional `barcode` (`data`, `type`, `readable`), optional `copies`.
 
-These remain for backward compatibility; new integrations should prefer
-`POST /api/print`.
+Adding a template: create a `TemplateDefinition` (name, description, zod `dataSchema`, and a `render(data, { geometry, dpmm }) => LabelSpec`) under `src/templates/`, then register it in `createDefaultRegistry()`.
 
-### `POST /api/print/test`
-Print the built-in demo label.
-```json
-{ "landscape": true }
-```
+### Legacy Print Endpoints
 
-### `POST /api/print/label`
-Print a fully specified label.
+These remain for backward compatibility; new integrations should prefer `POST /api/print`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/print/test` | Print the built-in demo label (`{ "landscape": true }`) |
+| POST | `/api/print/label` | Print a fully specified label (geometry + elements) |
+| POST | `/api/print/raw` | Send raw TSPL command lines verbatim |
+| POST | `/api/print/defect-tag` | Print the parameterized Defect Analysis Tag (computed geometry) |
+
+`POST /api/print/label` accepts element kinds `text`, `barcode`, and `raw` (`{ "kind": "raw", "command": "DENSITY 8" }`):
+
 ```json
 {
   "geometry": { "widthMm": 45, "heightMm": 75, "gapMm": 3, "direction": 0, "mirror": 0 },
@@ -501,81 +428,63 @@ Print a fully specified label.
   "copies": 1
 }
 ```
-Element kinds: `text`, `barcode`, and `raw` (`{ "kind": "raw", "command": "DENSITY 8" }`).
 
-### `POST /api/print/raw`
-Send raw TSPL command lines verbatim.
+`POST /api/print/raw`:
+
 ```json
 { "commands": ["SIZE 45 mm,75 mm", "GAP 3 mm,0 mm", "CLS", "PRINT 1,1"] }
 ```
 
-### `POST /api/print/defect-tag`
-Print the parameterized **Defect Analysis Tag**. All coordinates are computed
-from the current label geometry and DPI (`label.dpmm`), so the layout scales to
-any label size and cannot overflow or collide — a header (QR + id + timestamp),
-one full-width proportional gauge per row, and a footer. Gauge fills are clamped
-to their `max` (default 100).
-```json
-{
-  "id": "AGM24V_LINE2",
-  "timestamp": "11/09/2026 10:15:32",
-  "gauges": [
-    { "label": "TCA", "value": 84 },
-    { "label": "TCF", "value": 62 },
-    { "label": "TCAR", "value": 93 },
-    { "label": "IMP", "value": 45 },
-    { "label": "TAX", "value": 78 },
-    { "label": "CM", "value": 12.3, "max": 100 }
-  ],
-  "qrData": "AGM24V_LINE2",
-  "footer": "Defect Analysis Tag",
-  "direction": 0
-}
-```
+**Legacy error responses:**
 
-### Examples
+- `400 ValidationError` — the request body failed schema validation (`issues` lists details)
+- `404 NotFound` — unknown `/api/*` route
+- `502 PrinterError` — the printer could not be reached (timeout, refused, etc.)
 
-curl:
-```bash
-curl -X POST http://localhost:8080/api/print/test \
-  -H "Content-Type: application/json" \
-  -d '{"landscape":true}'
-```
+## Coordinates and Orientation
 
-PowerShell:
-```powershell
-Invoke-RestMethod -Uri http://localhost:8080/api/print/test `
-  -Method POST -ContentType 'application/json' `
-  -Body '{"landscape":true}'
-```
-
-Error responses:
-
-- `400 ValidationError` — the request body failed schema validation (`issues` lists details).
-- `404 NotFound` — unknown `/api/*` route.
-- `502 PrinterError` — the printer could not be reached (timeout, refused, etc.).
-
----
-
-## Coordinates and orientation
-
-- Element `x`/`y` are in **dots** from the top-left origin.
-  `203 dpi = 8 dots/mm`, `300 dpi ≈ 11.8 dots/mm`. Set `label.dpmm` to match your printhead.
-- **Landscape**: TSC printers have no landscape switch. Content is rotated 90°
-  per element. In the built-in test layout, `y` is the shared left margin and
-  `x` steps down the label length so rows don't overlap.
+- Element `x`/`y` are in **dots** from the top-left origin. `203 dpi = 8 dots/mm`, `300 dpi ≈ 11.8 dots/mm`. Set `label.dpmm` to match your printhead.
+- **Landscape**: TSC printers have no landscape switch. Content is rotated 90° per element. In the built-in test layout, `y` is the shared left margin and `x` steps down the label length so rows don't overlap.
 - **Whole-label flip**: set `label.direction` to `1` if prints come out upside down.
-- Keep elements inside the label: for a 45 mm-wide label at 203 dpi the x range
-  is `0..360` dots; for 75 mm the y range is `0..600` dots.
+- Keep elements inside the label: for a 45 mm-wide label at 203 dpi the x range is `0..360` dots; for 75 mm the y range is `0..600` dots.
 
----
+## Project Structure
+
+```
+tsc-printer-server/
+├── src/                      # Control API (TypeScript, ES modules)
+│   ├── config.ts             # env loading + validation (PORT/HOST only)
+│   ├── index.ts              # entry point (opens DB, starts server, graceful shutdown)
+│   ├── db/                   # SQLite connection, settings + templates repositories, seeds
+│   ├── http/                 # Express app factory, API routes, zod request schemas
+│   ├── printer/              # service (reads settings, builds TSPL) + transports
+│   ├── templates/            # code templates (registry, defect-tag, simple-label) and
+│   │                         #   stored-template model + {{placeholder}} rendering
+│   └── tspl/                 # label/element types, TSPL builder, layout builders
+├── frontend/                 # React app (Vite + TypeScript)
+│   └── src/                  # App shell, typed API client, panels (settings, test, custom, raw)
+├── public/                   # built React bundle (generated, gitignored)
+├── tests/                    # vitest unit + API tests (server)
+├── data/                     # SQLite database (created at runtime, gitignored)
+├── certs/                    # optional proxy root CA for builds (gitignored, .gitkeep kept)
+├── Dockerfile                # three-stage, multi-arch container build (node:22-alpine)
+└── .env.example              # annotated environment template (PORT/HOST)
+```
+
+## Tech Stack
+
+- **Node.js 18+** + **Express 4** — HTTP server and API
+- **TypeScript 5** — strict mode, ES modules
+- **better-sqlite3** — embedded database for settings and templates
+- **zod** — request and settings validation
+- **React 18** + **Vite** — web UI and frontend build
+- **Vitest** + **supertest** — testing (unit + API with injected fake transport)
+- **Raw TSPL over TCP** — printer transport (no native DLL, no `edge-js`)
+- **Docker** — three-stage Alpine build (amd64 + arm64)
 
 ## Testing
 
-Tests use **vitest**. They cover the TSPL builder, the test-label layout, env
-config, the SQLite settings repository (in-memory DB), the dry-run transport,
-and the HTTP API (via **supertest** with an injected fake transport and an
-in-memory database, so no printer or on-disk state is involved).
+Tests use **vitest**. They cover the TSPL builder, the test-label layout, env config, the SQLite settings repository (in-memory DB), the dry-run transport, and the HTTP API (via **supertest** with an injected fake transport and an in-memory database, so no printer or on-disk state is involved).
 
 ```bash
 npm test          # run once
@@ -583,7 +492,6 @@ npm run test:watch
 ```
 
 ```
-src/**             ← unit under test
 tests/
   builder.test.ts    TSPL rendering + string escaping (command-injection safe)
   layouts.test.ts    landscape rotation and element spacing
@@ -593,117 +501,10 @@ tests/
   api.test.ts        all endpoints (incl. settings), validation, 404 handling
 ```
 
----
-
-## Docker
-
-Build and run. Mount a volume for `/app/data` so the settings database survives
-container restarts:
-```bash
-docker build -t tsc-printer-server .
-docker run --rm -p 8080:8080 \
-  -v tsc_data:/app/data \
-  tsc-printer-server
-```
-
-Then configure the printer at runtime via the settings API:
-```bash
-curl -X PUT http://localhost:8080/api/settings \
-  -H "Content-Type: application/json" \
-  -d '{"printer":{"dryRun":false,"ip":"192.168.0.50"}}'
-```
-
-Multi-arch (amd64 + arm64):
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t tsc-printer-server .
-```
-
-### How the image is built
-
-The image is a three-stage build on `node:22-alpine` (Node 22 satisfies
-`better-sqlite3@13`'s `engines: node >=22`):
-
-- **`deps`** installs production dependencies only, including the native
-  `better-sqlite3` binary, then trims its compile-time sources and the prebuilt
-  binaries for platforms other than Alpine (musl).
-- **`build`** compiles the server TypeScript **and** builds the React frontend
-  into `public/`.
-- **`runtime`** copies just the trimmed `node_modules`, `dist/`, and `public/`.
-  It ships **no build tools**, runs as the non-root `node` user, declares a
-  `data` volume, and includes a `HEALTHCHECK` that polls `/api/health` (using
-  Node's `fetch`, so no `curl`/`wget` is added). It binds to `0.0.0.0` so the
-  port maps correctly. Final size is ~189 MB.
-
-### Building behind a TLS-inspection proxy (e.g. Zscaler)
-
-Compiling/fetching the `better-sqlite3` native binary reaches out to
-`nodejs.org` / `github.com` over HTTPS. If your network re-signs TLS traffic,
-those requests fail certificate verification. To fix it **without disabling TLS
-verification**:
-
-1. Export your proxy's root CA (PEM) and drop it into `certs/` as a `.crt`
-   file (the folder is kept via `certs/.gitkeep`; real certs are gitignored).
-2. Build normally — the builder stages install that CA into their trust store
-   and expose it to Node via `NODE_EXTRA_CA_CERTS`. The CA is **never** included
-   in the runtime image.
-
-For registry pulls behind the same proxy, point BuildKit at the CA with a
-`buildkitd.toml` (`[registry."docker.io"] ca=[...]`) when creating your builder.
-
----
-
-## Project structure
-
-```
-src/
-  config.ts            # env loading + validation (PORT/HOST only)
-  index.ts             # entry point (opens DB, starts server, graceful shutdown)
-  db/
-    database.ts        # SQLite connection + schema (settings + templates tables)
-    settings.ts        # settings types, zod schemas, defaults
-    settingsRepository.ts  # seed / read / update settings
-    templatesRepository.ts # CRUD for stored TSPL templates
-    templateSeeds.ts   # built-in templates seeded on first run
-  http/
-    app.ts             # Express app factory (also serves the frontend)
-    routes.ts          # API routes (print + settings + db-templates)
-    schemas.ts         # request validation schemas
-  printer/
-    service.ts         # reads settings, builds TSPL, sends via the transport
-    transport.ts       # NetworkTransport (TCP) + DryRunTransport (returns TSPL)
-  templates/
-    types.ts           # TemplateDefinition, RenderContext (code templates)
-    registry.ts        # TemplateRegistry (lookup, validate, render)
-    defect-tag.ts      # defect-tag code template
-    simple-label.ts    # simple-label code template
-    index.ts           # createDefaultRegistry()
-    render.ts          # {{placeholder}} substitution + escaping (stored templates)
-    string-template.ts # stored-template model, validation, renderTemplate()
-  tspl/
-    types.ts           # label/element types
-    builder.ts         # TSPL string generation + escaping
-    layouts.ts         # layout builders (buildDefectTagSpec, test label)
-frontend/              # React app (Vite + TypeScript)
-  src/
-    App.tsx            # top-level layout + shared status/output state
-    api.ts             # typed API client
-    types.ts           # shared API types
-    components/        # SettingsPanel, TestLabelPanel, CustomLabelPanel, RawTsplPanel, ...
-  vite.config.ts       # dev proxy + build output to ../public
-public/                # built React bundle (generated, gitignored)
-tests/                 # vitest unit + API tests (server)
-data/                  # SQLite database (created at runtime, gitignored)
-Dockerfile             # three-stage, multi-arch container build (node:22-alpine)
-certs/                 # optional proxy root CA for builds (gitignored, .gitkeep kept)
-.env.example           # annotated environment template (PORT/HOST)
-```
-
----
-
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
-|---|---|
+|---------|--------------------|
 | `502 PrinterError` / timeout | Wrong `printer.ip`, printer off, or not on the same network. Test with `ping <ip>`. |
 | Prints come out upside down | Set `label.direction` to `1` via `PUT /api/settings`. |
 | Content clipped off the edge | Coordinates exceed the label. Check `label.dpmm` matches your DPI (203 vs 300). |
@@ -712,8 +513,34 @@ certs/                 # optional proxy root CA for builds (gitignored, .gitkeep
 | Settings look wrong / corrupted | Stop the server and delete `./data/settings.db`; defaults are reseeded on start. |
 | Server exits at startup | `PORT`/`HOST` is invalid; the error message names the offending variable. |
 
----
+## Contributing
+
+This project follows [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+type(scope): short imperative description
+```
+
+Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `style`, `perf`
 
 ## License
 
 MIT
+
+<!-- Badge images -->
+[badge-license]: https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge&labelColor=ececec
+[badge-nodejs]: https://img.shields.io/badge/Node.js-18+-339933.svg?style=for-the-badge&logo=node.js&logoColor=339933&labelColor=ececec
+[badge-express]: https://img.shields.io/badge/Express-4-000000.svg?style=for-the-badge&logo=express&logoColor=000000&labelColor=ececec
+[badge-typescript]: https://img.shields.io/badge/TypeScript-5-3178C6.svg?style=for-the-badge&logo=typescript&logoColor=3178C6&labelColor=ececec
+[badge-react]: https://img.shields.io/badge/React-18-61DAFB.svg?style=for-the-badge&logo=react&logoColor=61DAFB&labelColor=ececec
+[badge-sqlite]: https://img.shields.io/badge/SQLite-better--sqlite3-003B57.svg?style=for-the-badge&logo=sqlite&logoColor=003B57&labelColor=ececec
+[badge-vitest]: https://img.shields.io/badge/Vitest-tested-6E9F18.svg?style=for-the-badge&logo=vitest&logoColor=6E9F18&labelColor=ececec
+
+<!-- Badge links -->
+[link-license]: https://opensource.org/licenses/MIT
+[link-nodejs]: https://nodejs.org/
+[link-express]: https://expressjs.com/
+[link-typescript]: https://www.typescriptlang.org/
+[link-react]: https://react.dev/
+[link-sqlite]: https://github.com/WiseLibs/better-sqlite3
+[link-vitest]: https://vitest.dev/
