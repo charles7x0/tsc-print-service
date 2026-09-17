@@ -32,11 +32,14 @@ export class PrinterService {
     if (this.injectedTransport) return this.injectedTransport;
     return settings.printer.dryRun
       ? new DryRunTransport()
-      : new NetworkTransport({
-          ip: settings.printer.ip,
-          port: settings.printer.port,
-          timeoutMs: settings.printer.timeoutMs,
-        });
+      : new NetworkTransport(
+          {
+            ip: settings.printer.ip,
+            port: settings.printer.port,
+            timeoutMs: settings.printer.timeoutMs,
+          },
+          settings.printer.lingerMs,
+        );
   }
 
   /** Default geometry derived from current settings. */
