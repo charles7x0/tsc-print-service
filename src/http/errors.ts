@@ -1,10 +1,6 @@
 import type { z } from 'zod';
 import { PrinterError } from '../printer/transport.js';
 import {
-  UnknownTemplateError,
-  TemplateValidationError,
-} from '../templates/index.js';
-import {
   StringTemplateValidationError,
   MissingVariablesError,
 } from '../templates/string-template.js';
@@ -45,12 +41,6 @@ export function mapError(err: unknown): MappedError | null {
   if (err instanceof ValidationError) {
     return { status: 400, body: { error: 'ValidationError', issues: err.issues } };
   }
-  if (err instanceof TemplateValidationError) {
-    return {
-      status: 400,
-      body: { error: 'TemplateValidationError', template: err.templateName, issues: err.issues },
-    };
-  }
   if (err instanceof StringTemplateValidationError) {
     return { status: 400, body: { error: 'TemplateValidationError', issues: err.issues } };
   }
@@ -59,12 +49,6 @@ export function mapError(err: unknown): MappedError | null {
   }
 
   // --- 404 / 409: template lookup / conflict -------------------------------
-  if (err instanceof UnknownTemplateError) {
-    return {
-      status: 404,
-      body: { error: 'UnknownTemplate', template: err.templateName, available: err.available },
-    };
-  }
   if (err instanceof TemplateNotFoundError) {
     return { status: 404, body: { error: 'TemplateNotFound', name: err.templateName } };
   }

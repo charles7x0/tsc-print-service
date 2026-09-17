@@ -36,9 +36,8 @@ Check out the [Getting Started](#getting-started) section for full instructions.
 ## Features
 
 - **TSPL Command Builder** — Typed builder for text, barcodes, and raw commands, with escaping that is safe against command injection
-- **Stored, Editable Templates** — Raw TSPL with `{{placeholders}}` saved in SQLite, printed by name with your data; author them in the browser or over the API
-- **Template-Driven Printing** — Code-defined templates that own layout, coordinate maths, and DPI scaling so the same request prints on any label size or printhead
-- **HTTP API** — Print from a stored template, a code template, a built-in test label, a custom label, or raw TSPL
+- **Stored, Editable Templates** — Raw TSPL with `{{placeholders}}` saved in SQLite, printed by name with your data; author them in the browser or over the API. All templated printing goes through these — there are no hardcoded templates
+- **HTTP API** — Print from a stored template, a built-in test label, a custom label, or raw TSPL
 - **React Frontend** — Vite + TypeScript UI to author templates, fill and print them, and preview the label live
 - **Dry-Run Mode** — Returns the generated TSPL (downloaded by the UI) so you can test with no hardware
 - **SQLite-Backed Settings & Templates** — Printer/label configuration and label templates are stored in a database and editable at runtime; only `PORT`/`HOST` stay in `.env`
@@ -101,18 +100,18 @@ Check out the [Getting Started](#getting-started) section for full instructions.
 **Key design decisions:**
 
 - **Transport is an interface** (`PrinterTransport`) — tests inject a fake transport, so the API is exercised end-to-end without touching a printer
-- **Printing is template-driven** — each code template pairs a zod `dataSchema` with a `render(data, { geometry, dpmm }) → LabelSpec`; geometry comes from settings, not the payload, so the same request prints on any stock/printhead
+- **Printing is template-driven** — templates are raw TSPL with `{{placeholders}}` stored in SQLite; on save they are validated (structural TSPL rules + placeholder/variable audit) and on print every value is escaped so caller data can't break out of a quoted argument or inject commands
 - **Settings live in SQLite**, not the environment — validated on every read/write with zod, applied transactionally, and read live so changes take effect without a restart
 - **Only `PORT`/`HOST` come from `.env`** (`config.ts` with zod) — invalid values fail fast at startup with a readable message
 - **The app factory is separate from server start** (`createApp` vs `index.ts`) so `supertest` can mount the app in-process
 - **ESM throughout**, targeting modern Node, with no runtime transpilation quirks
 
-### Request flow (example: `POST /api/print`)
+### Request flow (example: `POST /api/db-templates/:name/print`)
 
-1. A client sends `POST /api/print` with `{ "template": "defect-tag", "data": {...} }`.
-2. `routes.ts` validates the envelope (`schemas.ts`), then asks the **template registry** to render: it looks up the template (404 if unknown), validates `data` against that template's own zod schema (400 with field issues if invalid), and calls its `render(data, { geometry, dpmm })`.
-3. The template computes a `LabelSpec` from the label geometry/DPI (owned by settings, not the payload) — so it scales to any label size.
-4. `builder.ts` turns the `LabelSpec` into a TSPL string; the service hands it to the configured **transport**: `NetworkTransport` opens a TCP socket to the printer and writes the bytes, while `DryRunTransport` returns the TSPL without touching hardware (the web UI downloads it as a `.prn` file).
+1. A client sends `POST /api/db-templates/:name/print` with `{ "data": {...} }`.
+2. `routes.ts` validates the envelope (`schemas.ts`), then loads the named template from SQLite (404 if unknown) and renders it: each `{{placeholder}}` is substituted with the supplied value, every value is escaped, and required-variable presence is enforced (400 `MissingVariables` otherwise).
+3. The rendered TSPL is normalised to CRLF line endings (required by TSPL).
+4. The service hands the TSPL to the configured **transport**: `NetworkTransport` opens a TCP socket to the printer and writes the bytes, while `DryRunTransport` returns the TSPL without touching hardware (the web UI downloads it as a `.prn` file).
 5. The response returns `{ ok, template, result, tspl }` — including the exact TSPL sent, handy for debugging and previewing.
 
 ## Getting Started
@@ -364,56 +363,22 @@ Preview (no printing) returns `{ ok, name, tspl }`; print returns `{ ok, templat
 - `400 TemplateValidationError` — the TSPL/manifest is invalid (`issues[]` lists each problem, e.g. `missing-print`, `undeclared-variable`)
 - `400 MissingVariables` — a required variable had no value (`missing[]` names them)
 
-### Template-Driven Printing (Code Templates)
+> All templated printing now goes through **stored DB templates**
+> (`/api/db-templates/*`). The former code-defined templates (`defect-tag`,
+> `simple-label`) are seeded as editable DB string templates
+> (`tad-inspecao-defect-taxa`, `simple-label`) — there is no hardcoded template
+> registry or `POST /api/print` endpoint.
 
-Code-defined templates compiled into the server. The caller sends **business data** and names a **template**; the server owns all layout, coordinate maths, and DPI scaling. The caller never sends dots, positions, or geometry — those come from the printer/label configuration, so the same request prints correctly on a 203 or 300 dpi printer.
+### Low-Level Print Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/templates` | List code templates and a best-effort description of each template's `data` fields |
-| POST | `/api/print` | Canonical print endpoint — select a template by name and pass its `data` |
-
-`POST /api/print` example:
-
-```json
-{
-  "template": "defect-tag",
-  "copies": 1,
-  "data": {
-    "id": "SAMPLE-001",
-    "timestamp": "11/09/2026 10:15:32",
-    "gauges": [
-      { "label": "M0", "value": 84 },
-      { "label": "M1", "value": 12.3, "max": 100 }
-    ]
-  }
-}
-```
-
-Flow: look up the template → validate `data` against the template's schema → resolve geometry + DPI from settings → render to a `LabelSpec` → build TSPL → send. Returns `{ ok, template, result, tspl }`.
-
-**Errors:**
-
-- `404 UnknownTemplate` — the `template` name is not registered (response includes `available` template names)
-- `400 TemplateValidationError` — `data` failed the template's schema (response includes `issues` listing the offending fields)
-
-**Built-in code templates:**
-
-- **`defect-tag`** — QR + id + timestamp header, one proportional gauge per row, footer. `data`: `id`, `timestamp`, `gauges[]` (`label`, `value`, optional `max`), optional `qrData`, `footer`, `direction`.
-- **`simple-label`** — `data`: `lines[]` (text) and an optional `barcode` (`data`, `type`, `readable`), optional `copies`.
-
-Adding a template: create a `TemplateDefinition` (name, description, zod `dataSchema`, and a `render(data, { geometry, dpmm }) => LabelSpec`) under `src/templates/`, then register it in `createDefaultRegistry()`.
-
-### Legacy Print Endpoints
-
-These remain for backward compatibility; new integrations should prefer `POST /api/print`.
+For printing without a stored template — a built-in test label, a fully
+specified label, or raw TSPL command lines.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/print/test` | Print the built-in demo label (`{ "landscape": true }`) |
 | POST | `/api/print/label` | Print a fully specified label (geometry + elements) |
 | POST | `/api/print/raw` | Send raw TSPL command lines verbatim |
-| POST | `/api/print/defect-tag` | Print the parameterized gauge tag (computed geometry) |
 
 `POST /api/print/label` accepts element kinds `text`, `barcode`, and `raw` (`{ "kind": "raw", "command": "DENSITY 8" }`):
 
@@ -458,8 +423,8 @@ tsc-printer-server/
 │   ├── db/                   # SQLite connection, settings + templates repositories, seeds
 │   ├── http/                 # Express app factory, API routes, zod request schemas
 │   ├── printer/              # service (reads settings, builds TSPL) + transports
-│   ├── templates/            # code templates (registry, defect-tag, simple-label) and
-│   │                         #   stored-template model + {{placeholder}} rendering
+│   ├── templates/            # stored-template model, validation, and
+│   │                         #   {{placeholder}} rendering (string-template, render)
 │   └── tspl/                 # label/element types, TSPL builder, layout builders
 ├── frontend/                 # React app (Vite + TypeScript)
 │   └── src/                  # App shell, typed API client, panels (settings, test, custom, raw)

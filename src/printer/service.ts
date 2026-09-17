@@ -1,7 +1,7 @@
 import type { SettingsRepository } from '../db/settingsRepository.js';
 import type { Settings } from '../db/settings.js';
 import { buildLabel, buildRawProgram } from '../tspl/builder.js';
-import { buildTestLabelSpec, buildDefectTagSpec, type GaugeInput } from '../tspl/layouts.js';
+import { buildTestLabelSpec } from '../tspl/layouts.js';
 import type { LabelGeometry, LabelSpec } from '../tspl/types.js';
 import {
   DryRunTransport,
@@ -93,35 +93,6 @@ export class PrinterService {
     const spec = buildTestLabelSpec({
       geometry: this.defaultGeometry(),
       landscape,
-    });
-    return this.printLabel(spec);
-  }
-
-  /**
-   * Print the parameterized Defect Analysis Tag. Coordinates are computed from
-   * the current label geometry + DPI, so it fits any label size without
-   * overflow or collision.
-   */
-  async printDefectTag(input: {
-    id: string;
-    timestamp: string;
-    gauges: GaugeInput[];
-    qrData?: string;
-    footer?: string;
-    direction?: 0 | 1;
-  }): Promise<{ result: SendResult; tspl: string }> {
-    const settings = this.settings.getSettings();
-    const geometry = this.defaultGeometry();
-    if (input.direction !== undefined) geometry.direction = input.direction;
-
-    const spec = buildDefectTagSpec({
-      geometry,
-      dpmm: settings.label.dpmm,
-      id: input.id,
-      timestamp: input.timestamp,
-      gauges: input.gauges,
-      qrData: input.qrData,
-      footer: input.footer,
     });
     return this.printLabel(spec);
   }

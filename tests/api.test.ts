@@ -123,32 +123,6 @@ describe('HTTP API', () => {
     expect(fake.lastTspl).toContain('TEXT 60,30,"3",90,1,1,"Hello"');
   });
 
-  it('POST /api/print/defect-tag builds a tag and returns TSPL', async () => {
-    const res = await request(app)
-      .post('/api/print/defect-tag')
-      .send({
-        id: 'AGM24V_LINE2',
-        timestamp: '11/09/2026 10:15:32',
-        gauges: [
-          { label: 'TCA', value: 84 },
-          { label: 'CM', value: 12.3 },
-        ],
-      });
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.tspl).toContain('SIZE 45 mm,75 mm');
-    expect(res.body.tspl).toContain('QRCODE');
-    expect(fake.lastTspl).toContain('"TCA"');
-  });
-
-  it('POST /api/print/defect-tag validates the body', async () => {
-    const res = await request(app)
-      .post('/api/print/defect-tag')
-      .send({ id: 'X', timestamp: 't', gauges: [] });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('ValidationError');
-  });
-
   it('POST /api/test-connection reports unreachable for a bad target', async () => {
     // 203.0.113.0 is TEST-NET-3 (RFC 5737) — guaranteed unroutable.
     const res = await request(app)
@@ -157,66 +131,6 @@ describe('HTTP API', () => {
     expect(res.status).toBe(200);
     expect(res.body.reachable).toBe(false);
     expect(res.body.error).toBeTruthy();
-  });
-
-  // ---- Unified template-driven print endpoint ----
-
-  it('GET /api/templates lists available templates', async () => {
-    const res = await request(app).get('/api/templates');
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    const names = res.body.map((t: { name: string }) => t.name);
-    expect(names).toContain('defect-tag');
-    expect(names).toContain('simple-label');
-  });
-
-  it('POST /api/print renders a defect-tag via template name', async () => {
-    const res = await request(app)
-      .post('/api/print')
-      .send({
-        template: 'defect-tag',
-        data: {
-          id: 'AGM24V_LINE2',
-          timestamp: '11/09/2026 10:15:32',
-          gauges: [{ label: 'TCA', value: 84 }],
-        },
-      });
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.template).toBe('defect-tag');
-    expect(res.body.tspl).toContain('SIZE 45 mm,75 mm');
-    expect(res.body.tspl).toContain('QRCODE');
-  });
-
-  it('POST /api/print renders a simple-label via template name', async () => {
-    const res = await request(app)
-      .post('/api/print')
-      .send({
-        template: 'simple-label',
-        data: { lines: ['Hello', 'World'], barcode: { data: '123' } },
-      });
-    expect(res.status).toBe(200);
-    expect(res.body.tspl).toContain('"Hello"');
-    expect(res.body.tspl).toContain('BARCODE');
-  });
-
-  it('POST /api/print returns 404 for unknown template', async () => {
-    const res = await request(app)
-      .post('/api/print')
-      .send({ template: 'nonexistent', data: {} });
-    expect(res.status).toBe(404);
-    expect(res.body.error).toBe('UnknownTemplate');
-    expect(res.body.available).toContain('defect-tag');
-  });
-
-  it('POST /api/print returns 400 with field errors for invalid data', async () => {
-    const res = await request(app)
-      .post('/api/print')
-      .send({ template: 'defect-tag', data: { id: 'X' } });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('TemplateValidationError');
-    expect(res.body.template).toBe('defect-tag');
-    expect(res.body.issues.length).toBeGreaterThan(0);
   });
 
   // ---- DB-stored TSPL templates -------------------------------------------

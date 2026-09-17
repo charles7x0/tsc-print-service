@@ -87,6 +87,14 @@ describe('TemplatesRepository', () => {
     expect(names).toContain(SEED_NAME);
   });
 
+  it('seeds the simple-label template (replacement for the former code template)', () => {
+    expect(repo.has('simple-label')).toBe(true);
+    const tpl = repo.get('simple-label');
+    const tspl = renderTemplate(tpl, { line1: 'Hello', barcode: '123456' });
+    expect(tspl).toContain('"Hello"');
+    expect(tspl).toContain('BARCODE');
+  });
+
   it('renders the seeded template to the approved raw TSPL exactly', () => {
     const template = repo.get(SEED_NAME);
     const tspl = renderTemplate(template, REFERENCE_DATA).replace(/\r\n/g, '\n').trim();
