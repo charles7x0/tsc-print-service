@@ -5,7 +5,7 @@ import { PrinterService } from '../src/printer/service.js';
 import { openDatabase, type Db } from '../src/db/database.js';
 import { SettingsRepository } from '../src/db/settingsRepository.js';
 import { TemplatesRepository } from '../src/db/templatesRepository.js';
-import type { PrinterTransport, SendResult } from '../src/printer/transport.js';
+import { PrinterError, type PrinterTransport, type SendResult } from '../src/printer/transport.js';
 
 /** Captures the TSPL sent, so tests never touch a real printer. */
 class FakeTransport implements PrinterTransport {
@@ -344,5 +344,40 @@ describe('HTTP API', () => {
   it('returns 404 for unknown API routes', async () => {
     const res = await request(app).get('/api/does-not-exist');
     expect(res.status).toBe(404);
+  });
+
+  it('maps a PrinterError from the transport to 502', async () => {
+    // A transport that fails as a printer would (connection refused, etc.).
+    class FailingPrinterTransport implements PrinterTransport {
+      async send(): Promise<SendResult> {
+        throw new PrinterError('connection refused');
+      }
+    }
+    const failApp = createApp({
+      settings,
+      templates,
+      service: new PrinterService(settings, new FailingPrinterTransport()),
+    });
+    const res = await request(failApp).post('/api/print/test').send({ landscape: true });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('PrinterError');
+  });
+
+  it('maps an unexpected (non-domain) error to 500 without leaking the message', async () => {
+    class BuggyTransport implements PrinterTransport {
+      async send(): Promise<SendResult> {
+        throw new TypeError('internal bug with secret detail');
+      }
+    }
+    const buggyApp = createApp({
+      settings,
+      templates,
+      service: new PrinterService(settings, new BuggyTransport()),
+    });
+    const res = await request(buggyApp).post('/api/print/test').send({ landscape: true });
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('InternalError');
+    // The internal message must not be exposed to the client.
+    expect(JSON.stringify(res.body)).not.toContain('secret detail');
   });
 });

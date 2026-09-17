@@ -84,8 +84,9 @@ function renderElement(el: LabelElement): string {
  * Emits geometry (SIZE/GAP/DIRECTION), clears the buffer (CLS), sets the
  * codepage to UTF-8, renders every element, then issues PRINT.
  */
-export function buildLabel(spec: LabelSpec): string {
-  const { geometry, elements, quantity, copies } = spec;
+export function buildLabel(spec: LabelSpec, overrides: { copies?: number } = {}): string {
+  const { geometry, elements, quantity } = spec;
+  const copies = overrides.copies ?? spec.copies;
 
   const lines: string[] = [];
 

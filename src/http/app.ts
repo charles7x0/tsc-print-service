@@ -6,6 +6,7 @@ import type { SettingsRepository } from '../db/settingsRepository.js';
 import type { TemplatesRepository } from '../db/templatesRepository.js';
 import { createDefaultRegistry, type TemplateRegistry } from '../templates/index.js';
 import { createRoutes } from './routes.js';
+import { mapError } from './errors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -39,9 +40,18 @@ export function createApp({ settings, templates, service, registry }: AppDeps): 
     res.status(404).json({ error: 'NotFound' });
   });
 
+  // Central error handler: known domain errors map to their proper status via
+  // mapError; anything unrecognised is a 500 (logged server-side, no internal
+  // detail leaked to the client).
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(502).json({ error: 'PrinterError', message });
+    const mapped = mapError(err);
+    if (mapped) {
+      res.status(mapped.status).json(mapped.body);
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: 'InternalError' });
   });
 
   return app;

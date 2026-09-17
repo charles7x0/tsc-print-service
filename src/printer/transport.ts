@@ -22,6 +22,21 @@ export interface PrinterTransport {
   send(tspl: string): Promise<SendResult>;
 }
 
+/**
+ * Raised when a label cannot be delivered to the printer (connection refused,
+ * timeout, socket error). Distinct from programming/validation errors so the
+ * HTTP layer can map only genuine printer failures to 502.
+ */
+export class PrinterError extends Error {
+  constructor(
+    message: string,
+    public readonly target?: { ip: string; port: number },
+  ) {
+    super(message);
+    this.name = 'PrinterError';
+  }
+}
+
 export interface ProbeResult {
   reachable: boolean;
   target: { ip: string; port: number };
@@ -125,14 +140,19 @@ export class NetworkTransport implements PrinterTransport {
       socket.setNoDelay(true);
       socket.setTimeout(timeoutMs);
       socket.once('timeout', () =>
-        fail(new Error(`Timeout after ${timeoutMs}ms connecting to ${ip}:${port}`)),
+        fail(
+          new PrinterError(`Timeout after ${timeoutMs}ms connecting to ${ip}:${port}`, {
+            ip,
+            port,
+          }),
+        ),
       );
-      socket.once('error', (err) => fail(err));
+      socket.once('error', (err) => fail(new PrinterError(err.message, { ip, port })));
 
       socket.connect(port, ip, () => {
         socket.write(payload, (writeErr) => {
           if (writeErr) {
-            fail(writeErr);
+            fail(new PrinterError(writeErr.message, { ip, port }));
             return;
           }
           // Hold the connection open briefly so the printer can consume and
