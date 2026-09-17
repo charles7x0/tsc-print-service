@@ -74,7 +74,7 @@ describe('TemplatesRepository', () => {
 
   beforeEach(() => {
     db = openDatabase(':memory:');
-    repo = new TemplatesRepository(db);
+    repo = TemplatesRepository.create(db);
   });
 
   afterEach(() => {
@@ -166,7 +166,31 @@ describe('TemplatesRepository', () => {
 
   it('persists templates across repository instances', () => {
     repo.create(validInput('persisted'));
+    // Bare constructor reads existing data without re-seeding.
     const repo2 = new TemplatesRepository(db);
     expect(repo2.has('persisted')).toBe(true);
+  });
+
+  it('rejects an invalid name via schema (defense in depth) on create', () => {
+    const bad = validInput('has spaces!'); // fails the name regex in createTemplateSchema
+    expect(() => repo.create(bad)).toThrow();
+  });
+});
+
+describe('TemplatesRepository construction', () => {
+  it('bare constructor performs no writes (pure)', () => {
+    const db = openDatabase(':memory:');
+    // eslint-disable-next-line no-new
+    new TemplatesRepository(db);
+    const count = db.prepare('SELECT COUNT(*) AS n FROM templates').get() as { n: number };
+    expect(count.n).toBe(0);
+    db.close();
+  });
+
+  it('create() seeds built-in templates', () => {
+    const db = openDatabase(':memory:');
+    const repo = TemplatesRepository.create(db);
+    expect(repo.has(SEED_NAME)).toBe(true);
+    db.close();
   });
 });

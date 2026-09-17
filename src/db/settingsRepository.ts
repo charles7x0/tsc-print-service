@@ -15,15 +15,15 @@ interface SettingsRow {
  * Reads and writes application settings backed by the SQLite `settings` table.
  * Each top-level section ("printer", "label") is stored as a JSON blob.
  *
- * On construction it seeds any missing sections with defaults, so a fresh
- * database is immediately usable.
+ * The constructor is pure (prepares statements only). Use the static `create`
+ * factory to construct and seed defaults in one step at startup.
  */
 export class SettingsRepository {
   private readonly selectStmt;
   private readonly upsertStmt;
 
   constructor(private readonly db: Db) {
-    this.selectStmt = db.prepare<[string]>(
+    this.selectStmt = db.prepare<[string], SettingsRow>(
       'SELECT section, value FROM settings WHERE section = ?',
     );
     this.upsertStmt = db.prepare<[string, string]>(
@@ -31,14 +31,24 @@ export class SettingsRepository {
        VALUES (?, ?, datetime('now'))
        ON CONFLICT(section) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
     );
-    this.seedDefaults();
+  }
+
+  /**
+   * Construct the repository and seed default sections in one step. Prefer this
+   * over `new SettingsRepository(db)` at application startup; the bare
+   * constructor performs no writes, which keeps it pure and predictable.
+   */
+  static create(db: Db): SettingsRepository {
+    const repo = new SettingsRepository(db);
+    repo.seedDefaults();
+    return repo;
   }
 
   /** Insert default sections if they are not already present. */
-  private seedDefaults(): void {
+  seedDefaults(): void {
     const seed = this.db.transaction(() => {
       for (const section of ['printer', 'label'] as const) {
-        const existing = this.selectStmt.get(section) as SettingsRow | undefined;
+        const existing = this.selectStmt.get(section);
         if (!existing) {
           this.upsertStmt.run(section, JSON.stringify(DEFAULT_SETTINGS[section]));
         }
@@ -47,13 +57,14 @@ export class SettingsRepository {
     seed();
   }
 
-  private readSection<K extends keyof Settings>(section: K): Settings[K] {
-    const row = this.selectStmt.get(section) as SettingsRow | undefined;
+  private readSection(section: keyof Settings): unknown {
+    const row = this.selectStmt.get(section);
     if (!row) {
       // Should not happen after seeding, but fall back to defaults defensively.
       return DEFAULT_SETTINGS[section];
     }
-    return JSON.parse(row.value) as Settings[K];
+    // Parsed as unknown; settingsSchema.parse in getSettings is the sole gate.
+    return JSON.parse(row.value);
   }
 
   /** Return the full, validated settings snapshot. */

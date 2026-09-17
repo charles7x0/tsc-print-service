@@ -4,50 +4,43 @@ import { z } from 'zod';
  * The application settings that used to live in .env and now live in SQLite.
  * Only PORT/HOST remain in the environment; everything here is stored in and
  * served from the database.
+ *
+ * The per-section schemas are defined once and reused to derive both the full
+ * settings schema and the partial update schema, so field definitions can
+ * never drift between the two.
  */
+export const printerSchema = z.object({
+  ip: z.string().min(1),
+  port: z.number().int().positive(),
+  timeoutMs: z.number().int().positive(),
+  dryRun: z.boolean(),
+});
+
+export const labelSchema = z.object({
+  widthMm: z.number().positive(),
+  heightMm: z.number().positive(),
+  gapMm: z.number().nonnegative(),
+  direction: z.union([z.literal(0), z.literal(1)]),
+  mirror: z.union([z.literal(0), z.literal(1)]),
+  dpmm: z.number().positive(),
+});
+
 export const settingsSchema = z.object({
-  printer: z.object({
-    ip: z.string().min(1),
-    port: z.number().int().positive(),
-    timeoutMs: z.number().int().positive(),
-    dryRun: z.boolean(),
-  }),
-  label: z.object({
-    widthMm: z.number().positive(),
-    heightMm: z.number().positive(),
-    gapMm: z.number().nonnegative(),
-    direction: z.union([z.literal(0), z.literal(1)]),
-    mirror: z.union([z.literal(0), z.literal(1)]),
-    dpmm: z.number().positive(),
-  }),
+  printer: printerSchema,
+  label: labelSchema,
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
 
 /**
  * A deep-partial update payload for the settings. Every field is optional so
- * callers can patch just what they need.
+ * callers can patch just what they need. Derived from the section schemas
+ * above so it stays in lockstep with them.
  */
 export const settingsUpdateSchema = z
   .object({
-    printer: z
-      .object({
-        ip: z.string().min(1),
-        port: z.number().int().positive(),
-        timeoutMs: z.number().int().positive(),
-        dryRun: z.boolean(),
-      })
-      .partial(),
-    label: z
-      .object({
-        widthMm: z.number().positive(),
-        heightMm: z.number().positive(),
-        gapMm: z.number().nonnegative(),
-        direction: z.union([z.literal(0), z.literal(1)]),
-        mirror: z.union([z.literal(0), z.literal(1)]),
-        dpmm: z.number().positive(),
-      })
-      .partial(),
+    printer: printerSchema.partial(),
+    label: labelSchema.partial(),
   })
   .partial();
 
