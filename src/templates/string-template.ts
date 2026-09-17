@@ -173,6 +173,9 @@ export function renderTemplate(
     throw new MissingVariablesError(requiredMissing);
   }
 
+  // renderStringTemplate also reports `missing` (any unfilled placeholder), but
+  // that is the low-level, manifest-unaware view. Here the declared-variable
+  // required check above is authoritative, so we only take the rendered TSPL.
   const { tspl } = renderStringTemplate(template.source, data);
   return normalizeTsplLineEndings(tspl);
 }
