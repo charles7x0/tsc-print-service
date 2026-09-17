@@ -14,12 +14,16 @@ const numberFromEnv = z.coerce.number().finite();
 const envSchema = z.object({
   PORT: numberFromEnv.int().positive().default(8080),
   HOST: z.string().min(1).default('0.0.0.0'),
+  DB_PATH: z.string().min(1).default('./data/settings.db'),
 });
 
 export interface AppConfig {
   http: {
     port: number;
     host: string;
+  };
+  db: {
+    path: string;
   };
 }
 
@@ -41,6 +45,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     http: {
       port: parsed.data.PORT,
       host: parsed.data.HOST,
+    },
+    db: {
+      path: parsed.data.DB_PATH,
     },
   };
 }

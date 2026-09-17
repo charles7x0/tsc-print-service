@@ -3,13 +3,31 @@ import { openDatabase, type Db } from '../src/db/database.js';
 import { SettingsRepository } from '../src/db/settingsRepository.js';
 import { DEFAULT_SETTINGS } from '../src/db/settings.js';
 
+describe('SettingsRepository construction', () => {
+  it('bare constructor performs no writes (pure)', () => {
+    const db = openDatabase(':memory:');
+    // eslint-disable-next-line no-new
+    new SettingsRepository(db);
+    const count = db.prepare('SELECT COUNT(*) AS n FROM settings').get() as { n: number };
+    expect(count.n).toBe(0);
+    db.close();
+  });
+
+  it('create() seeds defaults', () => {
+    const db = openDatabase(':memory:');
+    const repo = SettingsRepository.create(db);
+    expect(repo.getSettings()).toEqual(DEFAULT_SETTINGS);
+    db.close();
+  });
+});
+
 describe('SettingsRepository', () => {
   let db: Db;
   let repo: SettingsRepository;
 
   beforeEach(() => {
     db = openDatabase(':memory:');
-    repo = new SettingsRepository(db);
+    repo = SettingsRepository.create(db);
   });
 
   afterEach(() => {

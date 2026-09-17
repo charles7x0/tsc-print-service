@@ -24,9 +24,22 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ PORT: '0' })).toThrow();
   });
 
+  it('reads DB_PATH from the environment', () => {
+    const cfg = loadConfig({ DB_PATH: '/tmp/custom.db' });
+    expect(cfg.db.path).toBe('/tmp/custom.db');
+  });
+
+  it('defaults DB_PATH when absent', () => {
+    const cfg = loadConfig({});
+    expect(cfg.db.path).toBe('./data/settings.db');
+  });
+
   it('does not read printer or label settings from the environment', () => {
-    // These are DB-backed now; loadConfig only shapes http.
-    const cfg = loadConfig({ PORT: '8080', HOST: '0.0.0.0' });
-    expect(cfg).toEqual({ http: { port: 8080, host: '0.0.0.0' } });
+    // These are DB-backed now; loadConfig only shapes http + db path.
+    const cfg = loadConfig({ PORT: '8080', HOST: '0.0.0.0', DB_PATH: './data/settings.db' });
+    expect(cfg).toEqual({
+      http: { port: 8080, host: '0.0.0.0' },
+      db: { path: './data/settings.db' },
+    });
   });
 });

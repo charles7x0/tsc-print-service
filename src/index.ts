@@ -7,10 +7,10 @@ import { createApp } from './http/app.js';
 function main(): void {
   const config = loadConfig();
 
-  // Open the database and seed defaults on first run.
-  const db = openDatabase();
-  const settings = new SettingsRepository(db);
-  const templates = new TemplatesRepository(db);
+  // Open the database (runs migrations) and seed defaults on first run.
+  const db = openDatabase(config.db.path);
+  const settings = SettingsRepository.create(db);
+  const templates = TemplatesRepository.create(db);
 
   const app = createApp({ settings, templates });
 

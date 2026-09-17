@@ -25,8 +25,8 @@ describe('HTTP API', () => {
 
   beforeEach(() => {
     db = openDatabase(':memory:');
-    settings = new SettingsRepository(db);
-    templates = new TemplatesRepository(db);
+    settings = SettingsRepository.create(db);
+    templates = TemplatesRepository.create(db);
     fake = new FakeTransport();
     const service = new PrinterService(settings, fake);
     app = createApp({ settings, templates, service });
