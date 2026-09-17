@@ -14,6 +14,12 @@ export const printerSchema = z.object({
   port: z.number().int().positive(),
   timeoutMs: z.number().int().positive(),
   dryRun: z.boolean(),
+  /**
+   * Milliseconds to hold the socket open after flushing a job before closing,
+   * giving the printer time to commit the buffer. Some printer/firmware
+   * combinations need a longer linger; tune here without a redeploy.
+   */
+  lingerMs: z.number().int().nonnegative().default(500),
 });
 
 export const labelSchema = z.object({
@@ -53,6 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
     port: 9100,
     timeoutMs: 5000,
     dryRun: true,
+    lingerMs: 500,
   },
   label: {
     widthMm: 45,

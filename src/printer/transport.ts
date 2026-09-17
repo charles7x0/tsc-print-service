@@ -8,6 +8,11 @@ export interface PrinterTarget {
 
 export interface SendResult {
   mode: 'network' | 'dry-run';
+  /**
+   * Number of payload bytes handed to the OS socket buffer. This is what was
+   * queued for delivery over TCP — NOT an acknowledgement that the printer
+   * received or committed the job (TCP cannot provide that at this layer).
+   */
   bytesSent: number;
   /** Present in network mode. */
   target?: { ip: string; port: number };
@@ -15,22 +20,27 @@ export interface SendResult {
 
 /**
  * Abstraction over "how a TSPL program reaches the printer". Implementations
- * either open a TCP socket to the printer or write the program to a file
- * (dry-run), which makes the whole stack testable without hardware.
+ * either open a TCP socket to the printer or return the program without
+ * sending (dry-run), which makes the whole stack testable without hardware.
  */
 export interface PrinterTransport {
   send(tspl: string): Promise<SendResult>;
 }
 
+/** Coarse classification of a connection failure, for UI-friendly messages. */
+export type FailureReason = 'timeout' | 'refused' | 'error';
+
 /**
  * Raised when a label cannot be delivered to the printer (connection refused,
- * timeout, socket error). Distinct from programming/validation errors so the
- * HTTP layer can map only genuine printer failures to 502.
+ * timeout, socket error, or the connection dropping before the job is flushed).
+ * Distinct from programming/validation errors so the HTTP layer can map only
+ * genuine printer failures to 502.
  */
 export class PrinterError extends Error {
   constructor(
     message: string,
     public readonly target?: { ip: string; port: number },
+    public readonly reason: FailureReason = 'error',
   ) {
     super(message);
     this.name = 'PrinterError';
@@ -44,6 +54,50 @@ export interface ProbeResult {
   latencyMs?: number;
   /** Failure reason (when not reachable). */
   error?: string;
+  /** Coarse failure classification (when not reachable). */
+  reason?: FailureReason;
+}
+
+/** Classify a socket error into a coarse, UI-friendly reason. */
+function classifyError(err: NodeJS.ErrnoException): FailureReason {
+  if (err.code === 'ECONNREFUSED') return 'refused';
+  if (err.code === 'ETIMEDOUT') return 'timeout';
+  return 'error';
+}
+
+/**
+ * Open a TCP connection to the target, resolving with a connected socket or
+ * rejecting with a PrinterError. Centralises the timeout/error/connect wiring
+ * and the single-settle guard shared by probing and sending.
+ *
+ * The returned socket still has its connect-timeout armed; callers should clear
+ * or re-arm `setTimeout` as needed and are responsible for closing it.
+ */
+function connectSocket(target: PrinterTarget): Promise<Socket> {
+  const { ip, port, timeoutMs } = target;
+
+  return new Promise<Socket>((resolvePromise, reject) => {
+    const socket = new Socket();
+    let settled = false;
+
+    const fail = (message: string, reason: FailureReason): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      reject(new PrinterError(message, { ip, port }, reason));
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.once('timeout', () =>
+      fail(`Timeout after ${timeoutMs}ms connecting to ${ip}:${port}`, 'timeout'),
+    );
+    socket.once('error', (err: NodeJS.ErrnoException) => fail(err.message, classifyError(err)));
+    socket.connect(port, ip, () => {
+      if (settled) return;
+      settled = true;
+      resolvePromise(socket);
+    });
+  });
 }
 
 /**
@@ -51,45 +105,31 @@ export interface ProbeResult {
  * immediately closing it — no data is sent, so it is safe to run any time.
  * Never rejects; it always resolves with a ProbeResult describing the outcome.
  */
-export function probeConnection(target: PrinterTarget): Promise<ProbeResult> {
-  const { ip, port, timeoutMs } = target;
+export async function probeConnection(target: PrinterTarget): Promise<ProbeResult> {
+  const { ip, port } = target;
   const startedAt = Date.now();
 
-  return new Promise<ProbeResult>((resolvePromise) => {
-    const socket = new Socket();
-    let settled = false;
-
-    const done = (result: ProbeResult): void => {
-      if (settled) return;
-      settled = true;
-      socket.destroy();
-      resolvePromise(result);
-    };
-
-    socket.setTimeout(timeoutMs);
-    socket.once('timeout', () =>
-      done({
-        reachable: false,
-        target: { ip, port },
-        error: `Timeout after ${timeoutMs}ms connecting to ${ip}:${port}`,
-      }),
-    );
-    socket.once('error', (err) =>
-      done({ reachable: false, target: { ip, port }, error: err.message }),
-    );
-    socket.connect(port, ip, () =>
-      done({
-        reachable: true,
-        target: { ip, port },
-        latencyMs: Date.now() - startedAt,
-      }),
-    );
-  });
+  try {
+    const socket = await connectSocket(target);
+    const latencyMs = Date.now() - startedAt;
+    socket.destroy();
+    return { reachable: true, target: { ip, port }, latencyMs };
+  } catch (err) {
+    if (err instanceof PrinterError) {
+      return { reachable: false, target: { ip, port }, error: err.message, reason: err.reason };
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return { reachable: false, target: { ip, port }, error: message, reason: 'error' };
+  }
 }
 
 /**
  * Sends TSPL to a network TSC printer over a raw TCP socket (port 9100).
  * No native dependencies, so it runs on Linux, Windows and ARM alike.
+ *
+ * A failed send throws PrinterError and does NOT retry — retrying a print is
+ * unsafe without idempotency (it can produce duplicate labels). The caller
+ * (HTTP layer → 502) decides what to do.
  */
 export class NetworkTransport implements PrinterTransport {
   /**
@@ -108,68 +148,64 @@ export class NetworkTransport implements PrinterTransport {
     this.lingerMs = lingerMs;
   }
 
-  send(tspl: string): Promise<SendResult> {
+  async send(tspl: string): Promise<SendResult> {
     const payload = Buffer.from(tspl, 'utf8');
-    const { ip, port, timeoutMs } = this.target;
+    const { ip, port } = this.target;
     const lingerMs = this.lingerMs;
 
+    const socket = await connectSocket(this.target);
+
     return new Promise<SendResult>((resolvePromise, reject) => {
-      const socket = new Socket();
       let settled = false;
+      // Set once the write is flushed and we deliberately close the socket.
+      let finished = false;
       let lingerTimer: NodeJS.Timeout | undefined;
 
-      const fail = (err: Error): void => {
+      const fail = (message: string, reason: FailureReason): void => {
         if (settled) return;
         settled = true;
         if (lingerTimer) clearTimeout(lingerTimer);
         socket.destroy();
-        reject(err);
+        reject(new PrinterError(message, { ip, port }, reason));
       };
 
       const succeed = (): void => {
         if (settled) return;
         settled = true;
-        resolvePromise({
-          mode: 'network',
-          bytesSent: payload.length,
-          target: { ip, port },
-        });
+        resolvePromise({ mode: 'network', bytesSent: payload.length, target: { ip, port } });
       };
 
       // Nagle off: send the job immediately in one go.
       socket.setNoDelay(true);
-      socket.setTimeout(timeoutMs);
       socket.once('timeout', () =>
-        fail(
-          new PrinterError(`Timeout after ${timeoutMs}ms connecting to ${ip}:${port}`, {
-            ip,
-            port,
-          }),
-        ),
+        fail(`Timeout after ${this.target.timeoutMs}ms writing to ${ip}:${port}`, 'timeout'),
       );
-      socket.once('error', (err) => fail(new PrinterError(err.message, { ip, port })));
+      socket.once('error', (err: NodeJS.ErrnoException) => fail(err.message, classifyError(err)));
 
-      socket.connect(port, ip, () => {
-        socket.write(payload, (writeErr) => {
-          if (writeErr) {
-            fail(new PrinterError(writeErr.message, { ip, port }));
-            return;
-          }
-          // Hold the connection open briefly so the printer can consume and
-          // commit the full job, then close gracefully. Resolve after the
-          // linger so callers know the job was delivered.
-          lingerTimer = setTimeout(() => {
-            socket.end();
-            succeed();
-          }, lingerMs);
-        });
-      });
-
-      // If the printer closes first (or after our end()), treat as success
-      // unless we already failed.
+      // Only a close AFTER we deliberately finished counts as success. An
+      // unexpected close before the job is flushed is a delivery failure.
       socket.once('close', () => {
         if (lingerTimer) clearTimeout(lingerTimer);
-        succeed();
+        if (finished) {
+          succeed();
+        } else {
+          fail(`Connection to ${ip}:${port} closed before the job was delivered`, 'error');
+        }
+      });
+
+      socket.write(payload, (writeErr) => {
+        if (writeErr) {
+          fail(writeErr.message, classifyError(writeErr as NodeJS.ErrnoException));
+          return;
+        }
+        // Hold the connection open briefly so the printer can consume and
+        // commit the full job, then close gracefully. Mark finished BEFORE
+        // ending so the 'close' handler resolves as success.
+        lingerTimer = setTimeout(() => {
+          finished = true;
+          socket.end();
+          succeed();
+        }, lingerMs);
       });
     });
   }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createServer, type AddressInfo, type Server } from 'node:net';
-import { DryRunTransport, NetworkTransport } from '../src/printer/transport.js';
+import {
+  DryRunTransport,
+  NetworkTransport,
+  PrinterError,
+  probeConnection,
+} from '../src/printer/transport.js';
 
 describe('DryRunTransport', () => {
   it('returns dry-run mode with the byte count and does not write a file', async () => {
@@ -64,12 +69,50 @@ describe('NetworkTransport', () => {
     }
   });
 
-  it('rejects when the printer is unreachable', async () => {
+  it('rejects with a PrinterError (refused) when the printer is unreachable', async () => {
     // Port 1 is not listening; connection is refused quickly.
-    const transport = new NetworkTransport(
-      { ip: '127.0.0.1', port: 1, timeoutMs: 1000 },
-      20,
-    );
-    await expect(transport.send('SIZE 45 mm,75 mm\r\nPRINT 1,1\r\n')).rejects.toThrow();
+    const transport = new NetworkTransport({ ip: '127.0.0.1', port: 1, timeoutMs: 1000 }, 20);
+    await expect(transport.send('SIZE 45 mm,75 mm\r\nPRINT 1,1\r\n')).rejects.toMatchObject({
+      name: 'PrinterError',
+      reason: 'refused',
+    });
+  });
+
+  it('fails when the connection closes before the job is delivered', async () => {
+    // Server accepts then immediately destroys the socket, before linger.
+    const server = createServer((socket) => socket.destroy());
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      // Long linger so the early close beats the deliberate end().
+      const transport = new NetworkTransport({ ip: '127.0.0.1', port, timeoutMs: 2000 }, 1000);
+      await expect(transport.send('SIZE 45 mm,75 mm\r\nPRINT 1,1\r\n')).rejects.toBeInstanceOf(
+        PrinterError,
+      );
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe('probeConnection', () => {
+  it('reports reachable with a latency for a listening server', async () => {
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const result = await probeConnection({ ip: '127.0.0.1', port, timeoutMs: 1000 });
+      expect(result.reachable).toBe(true);
+      expect(typeof result.latencyMs).toBe('number');
+    } finally {
+      server.close();
+    }
+  });
+
+  it('reports unreachable with reason "refused" for a closed port', async () => {
+    const result = await probeConnection({ ip: '127.0.0.1', port: 1, timeoutMs: 1000 });
+    expect(result.reachable).toBe(false);
+    expect(result.reason).toBe('refused');
+    expect(result.error).toBeTruthy();
   });
 });
