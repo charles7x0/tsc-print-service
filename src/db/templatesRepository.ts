@@ -24,16 +24,16 @@ interface TemplateRow {
 
 /** Thrown when a requested template name does not exist. */
 export class TemplateNotFoundError extends Error {
-  constructor(public readonly name: string) {
-    super(`Template not found: "${name}"`);
+  constructor(public readonly templateName: string) {
+    super(`Template not found: "${templateName}"`);
     this.name = 'TemplateNotFoundError';
   }
 }
 
 /** Thrown when creating a template whose name already exists. */
 export class TemplateExistsError extends Error {
-  constructor(public readonly name: string) {
-    super(`Template already exists: "${name}"`);
+  constructor(public readonly templateName: string) {
+    super(`Template already exists: "${templateName}"`);
     this.name = 'TemplateExistsError';
   }
 }

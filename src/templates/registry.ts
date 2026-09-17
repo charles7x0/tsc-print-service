@@ -8,7 +8,11 @@ import type {
 
 /** Thrown when a requested template name is not registered. */
 export class UnknownTemplateError extends Error {
-  constructor(public readonly templateName: string) {
+  constructor(
+    public readonly templateName: string,
+    /** Names of the templates that ARE registered, for a helpful 404 body. */
+    public readonly available: string[] = [],
+  ) {
     super(`Unknown template: "${templateName}"`);
     this.name = 'UnknownTemplateError';
   }
@@ -49,7 +53,7 @@ export class TemplateRegistry {
   /** Look up a template or throw UnknownTemplateError. */
   get(name: string): TemplateDefinition<unknown> {
     const template = this.templates.get(name);
-    if (!template) throw new UnknownTemplateError(name);
+    if (!template) throw new UnknownTemplateError(name, [...this.templates.keys()]);
     return template;
   }
 
