@@ -308,16 +308,16 @@ curl -X POST http://localhost:8080/api/db-templates/tad-inspecao-defect-taxa/pri
   -H "Content-Type: application/json" \
   -d '{
     "data": {
-      "qrData": "AGM24V-L2",
-      "id": "AGM24V-L2",
+      "qrData": "SAMPLE-001",
+      "id": "SAMPLE-001",
       "timestamp": "11/09/2026 10:15:32",
-      "footer": "BATTERY DEFECT ANALYSIS",
-      "m0_label": "TCA",  "m0_value": "84", "m0_ci": "78-88",
-      "m1_label": "TCF",  "m1_value": "62", "m1_ci": "55-70",
-      "m2_label": "TCAR", "m2_value": "93", "m2_ci": "85-95",
-      "m3_label": "IMP",  "m3_value": "45", "m3_ci": "40-55",
-      "m4_label": "TAXA", "m4_value": "78", "m4_ci": "70-85",
-      "m5_label": "CM",   "m5_value": "12.3","m5_ci": "10-15"
+      "footer": "SAMPLE REPORT",
+      "m0_label": "M0", "m0_value": "84", "m0_ci": "78-88",
+      "m1_label": "M1", "m1_value": "62", "m1_ci": "55-70",
+      "m2_label": "M2", "m2_value": "93", "m2_ci": "85-95",
+      "m3_label": "M3", "m3_value": "45", "m3_ci": "40-55",
+      "m4_label": "M4", "m4_value": "78", "m4_ci": "70-85",
+      "m5_label": "M5", "m5_value": "12.3","m5_ci": "10-15"
     }
   }'
 ```
@@ -327,14 +327,14 @@ PowerShell:
 ```powershell
 $body = @{
   data = @{
-    qrData = 'AGM24V-L2'; id = 'AGM24V-L2'; timestamp = '11/09/2026 10:15:32'
-    footer = 'BATTERY DEFECT ANALYSIS'
-    m0_label = 'TCA';  m0_value = '84';  m0_ci = '78-88'
-    m1_label = 'TCF';  m1_value = '62';  m1_ci = '55-70'
-    m2_label = 'TCAR'; m2_value = '93';  m2_ci = '85-95'
-    m3_label = 'IMP';  m3_value = '45';  m3_ci = '40-55'
-    m4_label = 'TAXA'; m4_value = '78';  m4_ci = '70-85'
-    m5_label = 'CM';   m5_value = '12.3';m5_ci = '10-15'
+    qrData = 'SAMPLE-001'; id = 'SAMPLE-001'; timestamp = '11/09/2026 10:15:32'
+    footer = 'SAMPLE REPORT'
+    m0_label = 'M0'; m0_value = '84';  m0_ci = '78-88'
+    m1_label = 'M1'; m1_value = '62';  m1_ci = '55-70'
+    m2_label = 'M2'; m2_value = '93';  m2_ci = '85-95'
+    m3_label = 'M3'; m3_value = '45';  m3_ci = '40-55'
+    m4_label = 'M4'; m4_value = '78';  m4_ci = '70-85'
+    m5_label = 'M5'; m5_value = '12.3';m5_ci = '10-15'
   }
 } | ConvertTo-Json
 Invoke-RestMethod -Uri http://localhost:8080/api/db-templates/tad-inspecao-defect-taxa/print `
@@ -380,11 +380,11 @@ Code-defined templates compiled into the server. The caller sends **business dat
   "template": "defect-tag",
   "copies": 1,
   "data": {
-    "id": "AGM24V_LINE2",
+    "id": "SAMPLE-001",
     "timestamp": "11/09/2026 10:15:32",
     "gauges": [
-      { "label": "TCA", "value": 84 },
-      { "label": "CM", "value": 12.3, "max": 100 }
+      { "label": "M0", "value": 84 },
+      { "label": "M1", "value": 12.3, "max": 100 }
     ]
   }
 }
@@ -413,7 +413,7 @@ These remain for backward compatibility; new integrations should prefer `POST /a
 | POST | `/api/print/test` | Print the built-in demo label (`{ "landscape": true }`) |
 | POST | `/api/print/label` | Print a fully specified label (geometry + elements) |
 | POST | `/api/print/raw` | Send raw TSPL command lines verbatim |
-| POST | `/api/print/defect-tag` | Print the parameterized Defect Analysis Tag (computed geometry) |
+| POST | `/api/print/defect-tag` | Print the parameterized gauge tag (computed geometry) |
 
 `POST /api/print/label` accepts element kinds `text`, `barcode`, and `raw` (`{ "kind": "raw", "command": "DENSITY 8" }`):
 
