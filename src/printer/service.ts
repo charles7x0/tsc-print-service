@@ -1,6 +1,6 @@
 import type { SettingsRepository } from '../db/settingsRepository.js';
 import type { Settings } from '../db/settings.js';
-import { buildLabel, buildRawProgram } from '../tspl/builder.js';
+import { buildLabel, buildRawProgram, validateSpec, SpecValidationError } from '../tspl/builder.js';
 import { buildTestLabelSpec } from '../tspl/layouts.js';
 import type { LabelGeometry, LabelSpec } from '../tspl/types.js';
 import {
@@ -59,10 +59,19 @@ export class PrinterService {
     return this.transportFor(this.settings.getSettings()).send(tspl);
   }
 
-  /** Send a fully-specified label. */
+  /**
+   * Send a fully-specified label. The spec is validated against the current
+   * printhead resolution first; elements positioned or sized off the label
+   * throw SpecValidationError (mapped to 400) rather than silently clipping on
+   * the printer.
+   */
   async printLabel(spec: LabelSpec): Promise<{ result: SendResult; tspl: string }> {
+    const settings = this.settings.getSettings();
+    const issues = validateSpec(spec, settings.label.dpmm);
+    if (issues.length > 0) throw new SpecValidationError(issues);
+
     const tspl = buildLabel(spec);
-    const result = await this.transportFor(this.settings.getSettings()).send(tspl);
+    const result = await this.transportFor(settings).send(tspl);
     return { result, tspl };
   }
 
@@ -92,6 +101,7 @@ export class PrinterService {
   async printTestLabel(landscape: boolean): Promise<{ result: SendResult; tspl: string }> {
     const spec = buildTestLabelSpec({
       geometry: this.defaultGeometry(),
+      dpmm: this.settings.getSettings().label.dpmm,
       landscape,
     });
     return this.printLabel(spec);

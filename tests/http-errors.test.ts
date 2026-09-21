@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mapError, ValidationError } from '../src/http/errors.js';
 import { PrinterError } from '../src/printer/transport.js';
+import { SpecValidationError } from '../src/tspl/builder.js';
 import {
   StringTemplateValidationError,
   MissingVariablesError,
@@ -35,6 +36,12 @@ describe('mapError', () => {
   it('maps TemplateExistsError to 409', () => {
     const mapped = mapError(new TemplateExistsError('dup'));
     expect(mapped).toEqual({ status: 409, body: { error: 'TemplateExists', name: 'dup' } });
+  });
+
+  it('maps SpecValidationError to 400 with issues', () => {
+    const mapped = mapError(new SpecValidationError([{ code: 'out-of-bounds', message: 'x' }]));
+    expect(mapped?.status).toBe(400);
+    expect(mapped?.body.error).toBe('SpecValidationError');
   });
 
   it('maps PrinterError to 502 with the message', () => {

@@ -123,6 +123,30 @@ describe('HTTP API', () => {
     expect(fake.lastTspl).toContain('TEXT 60,30,"3",90,1,1,"Hello"');
   });
 
+  it('POST /api/print/label rejects an element positioned off the label (400)', async () => {
+    const res = await request(app)
+      .post('/api/print/label')
+      .send({
+        geometry: { widthMm: 45, heightMm: 75, gapMm: 3, direction: 0, mirror: 0 },
+        elements: [
+          // x=5000 is far past the 360-dot width at the default 8 dpmm.
+          {
+            kind: 'text',
+            x: 5000,
+            y: 30,
+            font: '3',
+            rotation: 0,
+            xMultiplier: 1,
+            yMultiplier: 1,
+            content: 'off',
+          },
+        ],
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('SpecValidationError');
+    expect(res.body.issues.length).toBeGreaterThan(0);
+  });
+
   it('POST /api/test-connection reports unreachable for a bad target', async () => {
     // 203.0.113.0 is TEST-NET-3 (RFC 5737) — guaranteed unroutable.
     const res = await request(app)

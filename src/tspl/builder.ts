@@ -16,8 +16,17 @@ const EOL = '\r\n';
 
 /**
  * Escape a string for safe inclusion inside a TSPL double-quoted argument.
- * TSPL does not have a rich escape syntax; the practical rules are to strip
- * embedded double quotes and control characters that would break parsing.
+ *
+ * TSPL has no rich escape syntax, so this DROPS (does not escape) characters
+ * that would break a quoted argument: embedded double quotes and CR/LF are
+ * removed, and other control characters are collapsed to a space. The result
+ * is safe against command injection but LOSSY — a `"` in the input simply
+ * disappears. Callers that must preserve such characters should validate or
+ * reject upstream.
+ *
+ * Note: only glyphs supported by the active CODEPAGE (UTF-8) and the selected
+ * font render on the printer. Non-ASCII characters pass through here untouched
+ * but may print as blanks/boxes depending on printer and firmware.
  */
 export function escapeTsplString(value: string): string {
   return value
@@ -26,6 +35,80 @@ export function escapeTsplString(value: string): string {
     // Collapse other control chars.
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f]/g, ' ');
+}
+
+/** A problem found while validating a LabelSpec against its geometry. */
+export interface TsplIssue {
+  /** Machine-readable code, e.g. "out-of-bounds". */
+  code: string;
+  /** Human-readable explanation. */
+  message: string;
+}
+
+/** Thrown when a LabelSpec fails geometry validation (elements off the label). */
+export class SpecValidationError extends Error {
+  constructor(public readonly issues: TsplIssue[]) {
+    super(`Invalid label spec: ${issues.map((i) => i.code).join(', ')}`);
+    this.name = 'SpecValidationError';
+  }
+}
+
+/**
+ * Validate that every element in a LabelSpec falls within the printable area
+ * (0..widthDots × 0..heightDots), where the dot dimensions are derived from the
+ * label geometry (mm) and the printhead resolution (`dpmm`).
+ *
+ * This catches layout mistakes — an element positioned or sized off the label —
+ * BEFORE the program reaches the printer, where they would otherwise clip or
+ * print nothing with no error. `raw` elements are not checked (their coordinates
+ * are opaque). Returns a list of issues (empty = valid).
+ */
+export function validateSpec(spec: LabelSpec, dpmm: number): TsplIssue[] {
+  const widthDots = mmToDots(spec.geometry.widthMm, dpmm);
+  const heightDots = mmToDots(spec.geometry.heightMm, dpmm);
+  const issues: TsplIssue[] = [];
+
+  const outX = (x: number): boolean => x < 0 || x > widthDots;
+  const outY = (y: number): boolean => y < 0 || y > heightDots;
+
+  spec.elements.forEach((el, i) => {
+    const flag = (message: string): void => {
+      issues.push({ code: 'out-of-bounds', message: `element[${i}] (${el.kind}): ${message}` });
+    };
+
+    switch (el.kind) {
+      case 'text':
+      case 'barcode':
+      case 'qrcode':
+        if (outX(el.x) || outY(el.y)) {
+          flag(`origin (${el.x},${el.y}) is outside 0..${widthDots} x 0..${heightDots}`);
+        }
+        if (el.kind === 'barcode' && el.y + el.height > heightDots) {
+          flag(`barcode bottom (${el.y + el.height}) exceeds label height ${heightDots}`);
+        }
+        break;
+      case 'bar':
+        if (outX(el.x) || outY(el.y) || outX(el.x + el.width) || outY(el.y + el.height)) {
+          flag(
+            `rectangle (${el.x},${el.y})..(${el.x + el.width},${el.y + el.height}) exceeds ` +
+              `${widthDots} x ${heightDots}`,
+          );
+        }
+        break;
+      case 'box':
+        if (outX(el.x) || outY(el.y) || outX(el.xEnd) || outY(el.yEnd)) {
+          flag(
+            `box (${el.x},${el.y})..(${el.xEnd},${el.yEnd}) exceeds ${widthDots} x ${heightDots}`,
+          );
+        }
+        break;
+      case 'raw':
+        // Opaque command — cannot validate coordinates.
+        break;
+    }
+  });
+
+  return issues;
 }
 
 function renderText(el: TextElement): string {
@@ -52,6 +135,12 @@ function renderBox(el: BoxElement): string {
   return `BOX ${el.x},${el.y},${el.xEnd},${el.yEnd},${el.thickness}`;
 }
 
+/**
+ * Emit a `raw` element's command VERBATIM (only trimmed). This is a deliberate
+ * escape hatch: unlike text/barcode content, raw commands are NOT escaped, so a
+ * raw element can inject arbitrary TSPL. It is the caller's trust boundary —
+ * never wire untrusted input into a RawElement / the /api/print/raw path.
+ */
 function renderRaw(el: RawElement): string {
   return el.command.trim();
 }
@@ -83,6 +172,11 @@ function renderElement(el: LabelElement): string {
  *
  * Emits geometry (SIZE/GAP/DIRECTION), clears the buffer (CLS), sets the
  * codepage to UTF-8, renders every element, then issues PRINT.
+ *
+ * Scope: this builder targets millimetre, gap-sensor stock only (it always
+ * emits `SIZE ... mm` and `GAP ... mm,0 mm`). For black-mark (BLINE) stock,
+ * inch units, or any other command layout, author a DB string template instead
+ * — those emit their own raw SIZE/GAP/BLINE lines.
  */
 export function buildLabel(spec: LabelSpec, overrides: { copies?: number } = {}): string {
   const { geometry, elements, quantity } = spec;

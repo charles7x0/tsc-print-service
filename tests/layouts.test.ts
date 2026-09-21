@@ -10,10 +10,11 @@ const geometry: LabelGeometry = {
   direction: 0,
   mirror: 0,
 };
+const dpmm = 8;
 
 describe('buildTestLabelSpec', () => {
   it('rotates every element 90 degrees in landscape mode', () => {
-    const spec = buildTestLabelSpec({ geometry, landscape: true });
+    const spec = buildTestLabelSpec({ geometry, dpmm, landscape: true });
     for (const el of spec.elements) {
       if (el.kind !== 'raw') {
         expect(el.rotation).toBe(90);
@@ -22,7 +23,7 @@ describe('buildTestLabelSpec', () => {
   });
 
   it('uses no rotation in portrait mode', () => {
-    const spec = buildTestLabelSpec({ geometry, landscape: false });
+    const spec = buildTestLabelSpec({ geometry, dpmm, landscape: false });
     for (const el of spec.elements) {
       if (el.kind !== 'raw') {
         expect(el.rotation).toBe(0);
@@ -31,7 +32,7 @@ describe('buildTestLabelSpec', () => {
   });
 
   it('shares a constant left margin (y) across elements in landscape', () => {
-    const spec = buildTestLabelSpec({ geometry, landscape: true });
+    const spec = buildTestLabelSpec({ geometry, dpmm, landscape: true });
     const ys = spec.elements
       .filter((e) => e.kind !== 'raw')
       .map((e) => (e as { y: number }).y);
@@ -39,7 +40,7 @@ describe('buildTestLabelSpec', () => {
   });
 
   it('steps elements down the length (increasing x) in landscape', () => {
-    const spec = buildTestLabelSpec({ geometry, landscape: true });
+    const spec = buildTestLabelSpec({ geometry, dpmm, landscape: true });
     const xs = spec.elements
       .filter((e) => e.kind !== 'raw')
       .map((e) => (e as { x: number }).x);
@@ -51,6 +52,7 @@ describe('buildTestLabelSpec', () => {
   it('honors text overrides', () => {
     const spec = buildTestLabelSpec({
       geometry,
+      dpmm,
       landscape: true,
       barcodeData: '999',
       fontText: 'Custom',
@@ -61,7 +63,7 @@ describe('buildTestLabelSpec', () => {
   });
 
   it('produces valid TSPL with the configured geometry', () => {
-    const spec = buildTestLabelSpec({ geometry, landscape: true });
+    const spec = buildTestLabelSpec({ geometry, dpmm, landscape: true });
     const tspl = buildLabel(spec);
     expect(tspl).toContain('SIZE 45 mm,75 mm');
     expect(tspl).toContain('PRINT 1,1');

@@ -6,12 +6,15 @@ import type {
   Rotation,
   TextElement,
 } from './types.js';
+import { mmToDots } from './builder.js';
 
 /**
  * Options for the built-in demo/test label.
  */
 export interface TestLabelOptions {
   geometry: LabelGeometry;
+  /** Dots per mm for the target printhead (8 = 203 dpi, 11.8 = 300 dpi). */
+  dpmm: number;
   /**
    * When true, all content is rotated 90 degrees so it reads across the LONG
    * edge of the label (landscape). The physical stock is unchanged.
@@ -27,39 +30,27 @@ export interface TestLabelOptions {
 /**
  * Build the demo/test label.
  *
- * Layout logic (validated on real hardware):
- *  - Landscape uses rotation = 90 on every element.
- *  - `y` is the shared left margin across the width; keep it constant.
- *  - `x` steps down the label length so the rows are spaced out.
+ * Positions are COMPUTED from the label geometry and printhead resolution, so
+ * the label fits any stock/DPI without overflowing (consistent with the
+ * geometry-drives-layout principle used elsewhere).
+ *
+ *  - Portrait: rows stack down the label; `x` is a shared left margin.
+ *  - Landscape: rotation = 90; content reads across the long edge, so `y` is
+ *    the shared cross-margin and `x` steps along the label length.
  */
 export function buildTestLabelSpec(opts: TestLabelOptions): LabelSpec {
-  const rotation: Rotation = opts.landscape ? 90 : 0;
-  const marginY = 30;
+  const W = mmToDots(opts.geometry.widthMm, opts.dpmm);
+  const H = mmToDots(opts.geometry.heightMm, opts.dpmm);
+  const margin = Math.round(Math.min(W, H) * 0.08);
 
   const fontText = opts.fontText ?? 'Font Test';
   const barcodeData = opts.barcodeData ?? '123456';
   const windowsText = opts.windowsText ?? 'Windowsfont Test';
   const inlineText = opts.inlineText ?? 'Text Test!!';
 
-  const elements: LabelElement[] = [];
-
-  const font: TextElement = opts.landscape
-    ? mkText(60, marginY, '3', rotation, 1, 1, fontText)
-    : mkText(50, 50, '3', 0, 1, 1, fontText);
-
-  const barcode: BarcodeElement = opts.landscape
-    ? mkBarcode(180, marginY, '128', 70, 0, rotation, 3, 1, barcodeData)
-    : mkBarcode(50, 100, '128', 70, 0, 0, 3, 1, barcodeData);
-
-  const windows: TextElement = opts.landscape
-    ? mkText(340, marginY, '0', rotation, 12, 12, windowsText)
-    : mkText(50, 250, '0', 0, 12, 12, windowsText);
-
-  const inline: TextElement = opts.landscape
-    ? mkText(500, marginY, '0', rotation, 10, 10, inlineText)
-    : mkText(250, 50, '0', 0, 10, 10, inlineText);
-
-  elements.push(font, barcode, windows, inline);
+  const elements: LabelElement[] = opts.landscape
+    ? buildLandscape(W, margin, { fontText, barcodeData, windowsText, inlineText })
+    : buildPortrait(H, margin, { fontText, barcodeData, windowsText, inlineText });
 
   return {
     geometry: opts.geometry,
@@ -67,6 +58,42 @@ export function buildTestLabelSpec(opts: TestLabelOptions): LabelSpec {
     quantity: 1,
     copies: 1,
   };
+}
+
+interface TestTexts {
+  fontText: string;
+  barcodeData: string;
+  windowsText: string;
+  inlineText: string;
+}
+
+/** Portrait: four rows stacked down the label height. */
+function buildPortrait(H: number, margin: number, t: TestTexts): LabelElement[] {
+  const usableH = H - 2 * margin;
+  const row = (n: number): number => Math.round(margin + (usableH * n) / 4);
+  const barcodeHeight = Math.max(40, Math.round(H * 0.12));
+
+  return [
+    mkText(margin, row(0), '3', 0, 1, 1, t.fontText),
+    mkBarcode(margin, row(1), '128', barcodeHeight, 0, 0, 3, 1, t.barcodeData),
+    mkText(margin, row(2), '0', 0, 12, 12, t.windowsText),
+    mkText(margin, row(3), '0', 0, 10, 10, t.inlineText),
+  ];
+}
+
+/** Landscape: content rotated 90°, columns stepping along the label length. */
+function buildLandscape(W: number, margin: number, t: TestTexts): LabelElement[] {
+  const rotation: Rotation = 90;
+  const usableW = W - 2 * margin;
+  const col = (n: number): number => Math.round(margin + (usableW * n) / 4);
+  const barcodeHeight = Math.max(40, Math.round(W * 0.12));
+
+  return [
+    mkText(col(0), margin, '3', rotation, 1, 1, t.fontText),
+    mkBarcode(col(1), margin, '128', barcodeHeight, 0, rotation, 3, 1, t.barcodeData),
+    mkText(col(2), margin, '0', rotation, 12, 12, t.windowsText),
+    mkText(col(3), margin, '0', rotation, 10, 10, t.inlineText),
+  ];
 }
 
 function mkText(
@@ -94,7 +121,3 @@ function mkBarcode(
 ): BarcodeElement {
   return { kind: 'barcode', x, y, type, height, readable, rotation, narrow, wide, content };
 }
-
-// The parameterized "Defect Analysis Tag" layout was removed — that label is
-// now a DB-stored, editable TSPL string template (`tad-inspecao-defect-taxa`),
-// printed via /api/db-templates/:name/print.
