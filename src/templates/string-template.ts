@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { extractPlaceholders, renderStringTemplate, type TemplateValue } from './render.js';
+import { escapeTsplString } from '../tspl/builder.js';
 
 /**
  * A user-authored, DB-stored print template: raw TSPL text with
@@ -8,7 +8,50 @@ import { extractPlaceholders, renderStringTemplate, type TemplateValue } from '.
  * Authoring/editing a template means editing the TSPL directly (in a file or
  * the UI) — no coordinate maths in code. The variable manifest drives payload
  * validation and the UI form.
+ *
+ * This module owns the whole stored-template concern: the schemas, structural
+ * validation, and the `{{placeholder}}` render engine.
  */
+
+/** Matches a `{{ name }}` placeholder; captures the trimmed variable name. */
+const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
+
+/** A value that can be substituted into a placeholder. */
+export type TemplateValue = string | number | boolean;
+
+/**
+ * Return the distinct placeholder names referenced in `source`, in first-seen
+ * order. Drives validation, the placeholder audit, and the UI form.
+ */
+export function extractPlaceholders(source: string): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const match of source.matchAll(PLACEHOLDER_RE)) {
+    const name = match[1];
+    if (!seen.has(name)) {
+      seen.add(name);
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Substitute `{{placeholders}}` in `source` with values from `data`, returning
+ * the rendered TSPL. Every substituted value is passed through
+ * `escapeTsplString`, so a value like `foo"\r\nPRINT 99` cannot terminate a
+ * quoted argument or inject a command. Missing values render as empty string;
+ * `renderTemplate` enforces required-variable presence separately.
+ */
+export function renderStringTemplate(
+  source: string,
+  data: Record<string, TemplateValue | undefined | null>,
+): string {
+  return source.replace(PLACEHOLDER_RE, (_full, rawName: string) => {
+    const value = data[rawName.trim()];
+    return value === undefined || value === null ? '' : escapeTsplString(String(value));
+  });
+}
 
 /** One declared template variable. */
 export const templateVariableSchema = z.object({
@@ -173,10 +216,7 @@ export function renderTemplate(
     throw new MissingVariablesError(requiredMissing);
   }
 
-  // renderStringTemplate also reports `missing` (any unfilled placeholder), but
-  // that is the low-level, manifest-unaware view. Here the declared-variable
-  // required check above is authoritative, so we only take the rendered TSPL.
-  const { tspl } = renderStringTemplate(template.source, data);
+  const tspl = renderStringTemplate(template.source, data);
   return normalizeTsplLineEndings(tspl);
 }
 

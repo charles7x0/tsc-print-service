@@ -1,7 +1,12 @@
 import type { SettingsRepository } from '../db/settingsRepository.js';
 import type { Settings } from '../db/settings.js';
-import { buildLabel, buildRawProgram, validateSpec, SpecValidationError } from '../tspl/builder.js';
-import { buildTestLabelSpec } from '../tspl/layouts.js';
+import {
+  buildLabel,
+  buildRawProgram,
+  buildTestLabelSpec,
+  validateSpec,
+  SpecValidationError,
+} from '../tspl/builder.js';
 import type { LabelGeometry, LabelSpec } from '../tspl/types.js';
 import {
   DryRunTransport,
