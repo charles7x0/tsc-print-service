@@ -1,19 +1,19 @@
 import { useState } from 'react';
-import { api, ApiError } from '../api';
-import type { Settings } from '../types';
+import { api } from '../api';
+import type { Settings, StatusKind } from '../types';
+import { errorMessage } from '../errors';
 import { Card } from './Card';
 import { Fieldset, NumberField, SelectField, TextField } from './Field';
 
 interface SettingsPanelProps {
   settings: Settings;
   onSaved: (s: Settings) => void;
-  onOutput: (data: unknown) => void;
-  onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
+  onStatus: (text: string, kind: StatusKind) => void;
 }
 
-type ConnState = { text: string; kind: 'ok' | 'err' | '' };
+type ConnState = { text: string; kind: StatusKind };
 
-export function SettingsPanel({ settings, onSaved, onOutput, onStatus }: SettingsPanelProps) {
+export function SettingsPanel({ settings, onSaved, onStatus }: SettingsPanelProps) {
   const [printer, setPrinter] = useState(settings.printer);
   const [label, setLabel] = useState(settings.label);
   const [saving, setSaving] = useState(false);
@@ -30,16 +30,13 @@ export function SettingsPanel({ settings, onSaved, onOutput, onStatus }: Setting
     setSaving(true);
     try {
       const { settings: saved } = await api.updateSettings({ printer, label });
-      onOutput(saved);
       onSaved(saved);
       const mode = saved.printer.dryRun
         ? 'DRY RUN'
         : `${saved.printer.ip}:${saved.printer.port}`;
       onStatus('Settings saved · ' + mode, 'ok');
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      onOutput('Error: ' + message);
-      onStatus(message, 'err');
+      onStatus(errorMessage(err), 'err');
     } finally {
       setSaving(false);
     }
@@ -54,7 +51,6 @@ export function SettingsPanel({ settings, onSaved, onOutput, onStatus }: Setting
         port: printer.port,
         timeoutMs: printer.timeoutMs,
       });
-      onOutput(result);
       if (result.reachable) {
         setConn({
           text: `Reachable · ${result.target.ip}:${result.target.port} (${result.latencyMs} ms)`,
@@ -64,8 +60,7 @@ export function SettingsPanel({ settings, onSaved, onOutput, onStatus }: Setting
         setConn({ text: `Unreachable · ${result.error}`, kind: 'err' });
       }
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      setConn({ text: 'Error: ' + message, kind: 'err' });
+      setConn({ text: 'Error: ' + errorMessage(err), kind: 'err' });
     } finally {
       setTesting(false);
     }

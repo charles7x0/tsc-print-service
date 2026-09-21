@@ -1,19 +1,10 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError } from '../api';
-import type { Rotation, Settings } from '../types';
+import { api } from '../api';
+import type { PanelProps, Rotation } from '../types';
 import { downloadText, makePrnFilename } from '../download';
+import { errorMessage } from '../errors';
 import { Card } from './Card';
 import { Fieldset, NumberField, SelectField, TextField } from './Field';
-
-interface Props {
-  settings: Settings;
-  /** True when this panel is the visible view (drives the shared preview). */
-  active: boolean;
-  onOutput: (data: unknown) => void;
-  onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
-  /** Push a TSPL preview to the shared right-rail visualizer. */
-  onPreview: (source: string, dpmm: number) => void;
-}
 
 const rotationOptions: { value: Rotation; label: string }[] = [
   { value: 0, label: '0' },
@@ -22,7 +13,7 @@ const rotationOptions: { value: Rotation; label: string }[] = [
   { value: 270, label: '270' },
 ];
 
-export function CustomLabelPanel({ settings, active, onOutput, onStatus, onPreview }: Props) {
+export function CustomLabelPanel({ settings, active, onStatus, onPreview }: PanelProps) {
   // Geometry seeded from settings; kept in sync when settings change.
   const [width, setWidth] = useState(settings.label.widthMm);
   const [height, setHeight] = useState(settings.label.heightMm);
@@ -86,7 +77,6 @@ export function CustomLabelPanel({ settings, active, onOutput, onStatus, onPrevi
         quantity: 1,
         copies: 1,
       });
-      onOutput(data);
       // In dry-run mode, download the generated TSPL instead of it being
       // saved to a folder on the server.
       if (data.result.mode === 'dry-run') {
@@ -96,9 +86,7 @@ export function CustomLabelPanel({ settings, active, onOutput, onStatus, onPrevi
         onStatus('Custom label sent.', 'ok');
       }
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      onOutput('Error: ' + message);
-      onStatus(message, 'err');
+      onStatus(errorMessage(err), 'err');
     } finally {
       setBusy(false);
     }

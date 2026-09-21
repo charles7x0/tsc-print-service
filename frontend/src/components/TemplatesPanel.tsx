@@ -1,23 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError } from '../api';
-import type {
-  Settings,
-  StringTemplate,
-  TemplateData,
-  TemplateVariable,
-} from '../types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../api';
+import type { PanelProps, StringTemplate, TemplateVariable } from '../types';
 import { downloadText, makePrnFilename } from '../download';
+import {
+  extractPlaceholders,
+  sampleData,
+  substitutePlaceholders,
+} from '../tspl/placeholders';
+import { errorMessage, formatPrintError } from '../errors';
+import { useTemplates } from '../hooks/useTemplates';
 import { Card } from './Card';
-
-interface Props {
-  settings: Settings;
-  /** True when this panel is the visible view (drives the shared preview). */
-  active: boolean;
-  onOutput: (data: unknown) => void;
-  onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
-  /** Push a TSPL preview to the shared right-rail visualizer. */
-  onPreview: (source: string, dpmm: number) => void;
-}
 
 /** A blank template used when creating a new one. */
 function emptyTemplate(): StringTemplate {
@@ -29,31 +21,6 @@ function emptyTemplate(): StringTemplate {
     geometry: { widthMm: 45, heightMm: 75, dpmm: 8 },
     updatedAt: '',
   };
-}
-
-/** Build a data object from the variables' sample values (for preview/print). */
-function sampleData(variables: TemplateVariable[]): TemplateData {
-  const data: TemplateData = {};
-  for (const v of variables) {
-    data[v.name] = v.sample ?? `{${v.name}}`;
-  }
-  return data;
-}
-
-const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
-
-/** Distinct `{{placeholder}}` names in the source, in first-seen order. */
-function extractPlaceholders(source: string): string[] {
-  const seen = new Set<string>();
-  const names: string[] = [];
-  for (const m of source.matchAll(PLACEHOLDER_RE)) {
-    const name = m[1];
-    if (!seen.has(name)) {
-      seen.add(name);
-      names.push(name);
-    }
-  }
-  return names;
 }
 
 /** Shallow equality of two variable lists (name + required + sample + order). */
@@ -68,59 +35,39 @@ function sameVariables(a: TemplateVariable[], b: TemplateVariable[]): boolean {
 /**
  * Load, edit, preview, save and print DB-stored TSPL templates.
  *
- * The live preview is produced by the server's /preview endpoint (so escaping
- * and substitution match exactly what will print), then rendered by the shared
- * TsplVisualizer. Preview calls are debounced while editing.
+ * The live right-rail preview substitutes sample values locally using the same
+ * escaping as the server, so it matches what will print. Preview updates are
+ * debounced while editing. The template list is shared via useTemplates so the
+ * Print panel sees create/delete changes immediately.
  */
-export function TemplatesPanel({ settings, active, onOutput, onStatus, onPreview }: Props) {
-  const [templates, setTemplates] = useState<StringTemplate[]>([]);
+export function TemplatesPanel({ settings, active, onStatus, onPreview }: PanelProps) {
+  const { templates, refresh } = useTemplates();
   const [selected, setSelected] = useState<string>('');
   const [draft, setDraft] = useState<StringTemplate>(emptyTemplate());
   const [isNew, setIsNew] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Tracks whether the user has made an explicit selection, so the auto-select
+  // effect only seeds the initial draft once.
+  const seededRef = useRef(false);
 
   const dryRun = settings.printer.dryRun;
 
-  const refreshList = useCallback(async (): Promise<StringTemplate[]> => {
-    const list = await api.listTemplates();
-    setTemplates(list);
-    return list;
-  }, []);
-
-  // Initial load: fetch the list and select the first template.
+  // Seed the draft with the first template once the list first loads.
   useEffect(() => {
-    let cancelled = false;
-    refreshList()
-      .then((list) => {
-        if (cancelled || list.length === 0) return;
-        setSelected(list[0].name);
-        setDraft(list[0]);
-        setIsNew(false);
-      })
-      .catch((err: unknown) => {
-        onStatus(err instanceof ApiError ? err.message : String(err), 'err');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshList, onStatus]);
+    if (seededRef.current || templates.length === 0) return;
+    seededRef.current = true;
+    setSelected(templates[0].name);
+    setDraft(templates[0]);
+    setIsNew(false);
+  }, [templates]);
 
   // Debounced live preview whenever the source/variables/geometry change.
-  // Substitutes sample values locally so the shared right-rail preview updates
-  // without a server round-trip on every keystroke.
   const previewTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (!active) return;
     window.clearTimeout(previewTimer.current);
     previewTimer.current = window.setTimeout(() => {
-      const data = sampleData(draft.variables);
-      const local = draft.source.replace(
-        /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g,
-        (_m, name: string) => {
-          const v = data[name.trim()];
-          return v === undefined ? '' : String(v);
-        },
-      );
+      const local = substitutePlaceholders(draft.source, sampleData(draft.variables));
       onPreview(local, draft.geometry.dpmm);
     }, 300);
     return () => window.clearTimeout(previewTimer.current);
@@ -130,16 +77,13 @@ export function TemplatesPanel({ settings, active, onOutput, onStatus, onPreview
   // - New placeholders appear as rows automatically (required, no sample yet).
   // - Placeholders removed from the source drop their row.
   // - Existing rows keep their required/sample/description (edits are preserved).
-  // - A blank in-progress row (empty name) the user is typing is left alone.
   useEffect(() => {
     const used = extractPlaceholders(draft.source);
     setDraft((d) => {
       const byName = new Map(d.variables.map((v) => [v.name, v]));
-      // One row per used placeholder, preserving any existing settings.
       const next: TemplateVariable[] = used.map(
         (name) => byName.get(name) ?? { name, required: true },
       );
-      // Skip the update if nothing actually changed (avoids a render loop).
       if (sameVariables(d.variables, next)) return d;
       return { ...d, variables: next };
     });
@@ -183,9 +127,8 @@ export function TemplatesPanel({ settings, active, onOutput, onStatus, onPreview
       const saved = isNew
         ? await api.createTemplate({ name: draft.name, ...body })
         : await api.updateTemplate(draft.name, body);
-      onOutput(saved);
       onStatus(isNew ? 'Template created.' : 'Template saved.', 'ok');
-      const list = await refreshList();
+      const list = await refresh();
       const still = list.find((t) => t.name === saved.name);
       if (still) {
         setSelected(saved.name);
@@ -193,7 +136,7 @@ export function TemplatesPanel({ settings, active, onOutput, onStatus, onPreview
         setIsNew(false);
       }
     } catch (err) {
-      handleError(err);
+      onStatus(errorMessage(err), 'err');
     } finally {
       setBusy(false);
     }
@@ -206,14 +149,14 @@ export function TemplatesPanel({ settings, active, onOutput, onStatus, onPreview
     try {
       await api.deleteTemplate(draft.name);
       onStatus('Template deleted.', 'ok');
-      const list = await refreshList();
+      const list = await refresh();
       if (list.length > 0) {
         selectTemplate(list[0].name);
       } else {
         selectTemplate('__new__');
       }
     } catch (err) {
-      handleError(err);
+      onStatus(errorMessage(err), 'err');
     } finally {
       setBusy(false);
     }
@@ -234,10 +177,9 @@ export function TemplatesPanel({ settings, active, onOutput, onStatus, onPreview
         variables: draft.variables,
         geometry: draft.geometry,
       });
+      await refresh();
 
-      const data = sampleData(draft.variables);
-      const res = await api.printTemplate(draft.name, data);
-      onOutput(res);
+      const res = await api.printTemplate(draft.name, sampleData(draft.variables));
       if (res.result.mode === 'dry-run') {
         downloadText(makePrnFilename(draft.name || 'template'), res.tspl);
         onStatus('Dry run — TSPL downloaded.', 'ok');
@@ -245,32 +187,10 @@ export function TemplatesPanel({ settings, active, onOutput, onStatus, onPreview
         onStatus('Template sent to printer.', 'ok');
       }
     } catch (err) {
-      handlePrintError(err);
+      onStatus(formatPrintError(err), 'err');
     } finally {
       setBusy(false);
     }
-  }
-
-  function handleError(err: unknown) {
-    const message = err instanceof ApiError ? err.message : String(err);
-    onOutput('Error: ' + message);
-    onStatus(message, 'err');
-  }
-
-  /**
-   * Print errors are usually a printer-connection failure (the server returns
-   * 502 PrinterError with the socket message). Surface that clearly so it is
-   * not mistaken for the button "doing nothing".
-   */
-  function handlePrintError(err: unknown) {
-    const message = err instanceof ApiError ? err.message : String(err);
-    const looksLikeConnection =
-      /timeout|econnrefused|ehostunreach|enetunreach|connect/i.test(message);
-    const hint = looksLikeConnection
-      ? ' — printer unreachable. Check the IP/port in Settings, or enable Dry run to download the .prn.'
-      : '';
-    onOutput('Print failed: ' + message + hint);
-    onStatus('Print failed: ' + message + hint, 'err');
   }
 
   const options = useMemo(

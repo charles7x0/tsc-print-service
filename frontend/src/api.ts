@@ -10,8 +10,22 @@ import type {
   UpdateTemplateBody,
 } from './types';
 
-/** Error carrying the server's structured message when a request fails. */
-export class ApiError extends Error {}
+/**
+ * Error carrying the server's structured failure. `code` is the machine-
+ * readable `error` field from the response body (e.g. "PrinterError",
+ * "ValidationError"), letting the UI branch on the kind of failure instead of
+ * string-matching the human message. `status` is the HTTP status.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code?: string,
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -20,9 +34,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    const message =
-      (data.message as string) || (data.error as string) || `HTTP ${res.status}`;
-    throw new ApiError(message);
+    const code = typeof data.error === 'string' ? data.error : undefined;
+    const message = (data.message as string) || code || `HTTP ${res.status}`;
+    throw new ApiError(message, code, res.status);
   }
   return data as T;
 }
