@@ -1,18 +1,9 @@
 import { useEffect, useState } from 'react';
-import { api, ApiError } from '../api';
-import type { Settings } from '../types';
+import { api } from '../api';
+import type { PanelProps } from '../types';
 import { downloadText, makePrnFilename } from '../download';
+import { errorMessage } from '../errors';
 import { Card } from './Card';
-
-interface Props {
-  settings: Settings;
-  /** True when this panel is the visible view (drives the shared preview). */
-  active: boolean;
-  onOutput: (data: unknown) => void;
-  onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
-  /** Push a TSPL preview to the shared right-rail visualizer. */
-  onPreview: (source: string, dpmm: number) => void;
-}
 
 const DEFAULT_TSPL = `SIZE 45 mm,75 mm
 GAP 3 mm,0 mm
@@ -22,7 +13,7 @@ TEXT 60,30,"3",90,1,1,"Raw Test"
 BARCODE 180,30,"128",70,0,90,3,1,"123456"
 PRINT 1,1`;
 
-export function RawTsplPanel({ settings, active, onOutput, onStatus, onPreview }: Props) {
+export function RawTsplPanel({ settings, active, onStatus, onPreview }: PanelProps) {
   const [commands, setCommands] = useState(DEFAULT_TSPL);
   const [busy, setBusy] = useState(false);
 
@@ -45,7 +36,6 @@ export function RawTsplPanel({ settings, active, onOutput, onStatus, onPreview }
         .map((l) => l.trim())
         .filter(Boolean);
       const data = await api.printRaw(lines);
-      onOutput(data);
       // In dry-run mode, download the generated TSPL rather than saving it
       // to a folder on the server.
       if (data.result.mode === 'dry-run') {
@@ -55,9 +45,7 @@ export function RawTsplPanel({ settings, active, onOutput, onStatus, onPreview }
         onStatus('Raw TSPL sent to printer.', 'ok');
       }
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      onOutput('Error: ' + message);
-      onStatus(message, 'err');
+      onStatus(errorMessage(err), 'err');
     } finally {
       setBusy(false);
     }

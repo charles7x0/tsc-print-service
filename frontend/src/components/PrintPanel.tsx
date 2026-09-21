@@ -1,29 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, ApiError } from '../api';
-import type { Settings, StringTemplate, TemplateData } from '../types';
+import { api } from '../api';
+import type { PanelProps, TemplateData } from '../types';
 import { downloadText, makePrnFilename } from '../download';
+import { substitutePlaceholders } from '../tspl/placeholders';
+import { formatPrintError } from '../errors';
+import { useTemplates } from '../hooks/useTemplates';
 import { Card } from './Card';
-
-interface Props {
-  settings: Settings;
-  /** True when this panel is the visible view (drives the shared preview). */
-  active: boolean;
-  onOutput: (data: unknown) => void;
-  onStatus: (text: string, kind: 'ok' | 'err' | '') => void;
-  /** Push a TSPL preview to the shared right-rail visualizer. */
-  onPreview: (source: string, dpmm: number) => void;
-}
 
 /**
  * The operator flow: choose an existing template, fill in its variables, see a
  * live preview, and print. This is the 90% daily case, so it stays intentionally
  * calm — no TSPL editor, no geometry dot-coordinates. Authoring lives elsewhere.
  */
-export function PrintPanel({ settings, active, onOutput, onStatus, onPreview }: Props): JSX.Element {
-  const [templates, setTemplates] = useState<StringTemplate[]>([]);
+export function PrintPanel({ settings, active, onStatus, onPreview }: PanelProps): JSX.Element {
+  const { templates, loading, error } = useTemplates();
   const [selected, setSelected] = useState<string>('');
   const [values, setValues] = useState<TemplateData>({});
-  const [loading, setLoading] = useState<boolean>(true);
   const [busy, setBusy] = useState<boolean>(false);
 
   const dryRun = settings.printer.dryRun;
@@ -33,26 +25,22 @@ export function PrintPanel({ settings, active, onOutput, onStatus, onPreview }: 
     [templates, selected],
   );
 
-  // Load the template list once; select the first template by default.
+  // Surface a load error from the shared hook.
   useEffect(() => {
-    let cancelled = false;
-    api
-      .listTemplates()
-      .then((list) => {
-        if (cancelled) return;
-        setTemplates(list);
-        if (list.length > 0) setSelected(list[0].name);
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setLoading(false);
-        onStatus(err instanceof ApiError ? err.message : String(err), 'err');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [onStatus]);
+    if (error) onStatus(error, 'err');
+  }, [error, onStatus]);
+
+  // Default the selection to the first template once the list loads (or when the
+  // current selection disappears after a delete elsewhere).
+  useEffect(() => {
+    if (templates.length === 0) {
+      setSelected('');
+      return;
+    }
+    if (!templates.some((t) => t.name === selected)) {
+      setSelected(templates[0].name);
+    }
+  }, [templates, selected]);
 
   // Seed the form values from each variable's sample when the selection changes.
   useEffect(() => {
@@ -68,7 +56,7 @@ export function PrintPanel({ settings, active, onOutput, onStatus, onPreview }: 
   }, [current]);
 
   // Local preview substitution pushed to the shared right-rail visualizer;
-  // mirrors the server engine closely enough for a placement preview. Only the
+  // uses the same escaping as the server so it matches what will print. Only the
   // active view drives the shared preview.
   useEffect(() => {
     if (!active) return;
@@ -76,14 +64,7 @@ export function PrintPanel({ settings, active, onOutput, onStatus, onPreview }: 
       onPreview('', settings.label.dpmm);
       return;
     }
-    const local = current.source.replace(
-      /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g,
-      (_m, name: string) => {
-        const v = values[name.trim()];
-        return v === undefined ? '' : String(v);
-      },
-    );
-    onPreview(local, current.geometry.dpmm);
+    onPreview(substitutePlaceholders(current.source, values), current.geometry.dpmm);
   }, [active, current, values, onPreview, settings.label.dpmm]);
 
   const setValue = useCallback((name: string, value: string) => {
@@ -109,7 +90,6 @@ export function PrintPanel({ settings, active, onOutput, onStatus, onPreview }: 
     setBusy(true);
     try {
       const res = await api.printTemplate(current.name, values);
-      onOutput(res);
       if (res.result.mode === 'dry-run') {
         downloadText(makePrnFilename(current.name), res.tspl);
         onStatus('Dry run — TSPL downloaded.', 'ok');
@@ -117,9 +97,7 @@ export function PrintPanel({ settings, active, onOutput, onStatus, onPreview }: 
         onStatus('Sent to printer.', 'ok');
       }
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : String(err);
-      onOutput('Error: ' + message);
-      onStatus(message, 'err');
+      onStatus(formatPrintError(err), 'err');
     } finally {
       setBusy(false);
     }

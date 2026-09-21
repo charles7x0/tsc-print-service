@@ -129,3 +129,19 @@ export interface TemplatePreviewResponse {
 
 /** Primary views the single-page app switches between. */
 export type ViewId = 'print' | 'templates' | 'custom' | 'settings';
+
+// ---- Shared panel contract -----------------------------------------------
+
+/** Status banner severity used across panels. */
+export type StatusKind = 'ok' | 'err' | '';
+
+/** Props every feature panel receives from the app shell. */
+export interface PanelProps {
+  settings: Settings;
+  /** True when this panel is the visible view (drives the shared preview). */
+  active: boolean;
+  /** Report a status message + severity to the app shell. */
+  onStatus: (text: string, kind: StatusKind) => void;
+  /** Push a TSPL preview to the shared right-rail visualizer. */
+  onPreview: (source: string, dpmm: number) => void;
+}

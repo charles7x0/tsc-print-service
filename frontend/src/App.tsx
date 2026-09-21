@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from './api';
-import type { Settings, ViewId } from './types';
+import type { Settings, StatusKind, ViewId } from './types';
 import { SettingsPanel } from './components/SettingsPanel';
 import { CustomLabelPanel } from './components/CustomLabelPanel';
 import { RawTsplPanel } from './components/RawTsplPanel';
@@ -10,8 +10,6 @@ import { NavBar } from './components/NavBar';
 import { TsplVisualizer } from './components/TsplVisualizer';
 import { StatusPill, type ConnectionState } from './components/StatusPill';
 import { usePrinterStatus } from './hooks/usePrinterStatus';
-
-type StatusKind = 'ok' | 'err' | '';
 
 /** Shared preview payload lifted to the app so it can render in the right rail. */
 export interface PreviewState {
@@ -36,12 +34,6 @@ export function App(): JSX.Element {
   const onStatus = useCallback((text: string, kind: StatusKind) => {
     setStatusMessage(text);
     if (kind === 'err') setConnState('error');
-  }, []);
-
-  // The raw response is no longer surfaced in the UI; status messages convey
-  // success/errors. Kept as a no-op so panels can call it without changes.
-  const onOutput = useCallback((_data: unknown) => {
-    /* intentionally not displayed */
   }, []);
 
   const reflectSettings = useCallback((s: Settings) => {
@@ -114,7 +106,6 @@ export function App(): JSX.Element {
                 <PrintPanel
                   settings={settings}
                   active={view === 'print'}
-                  onOutput={onOutput}
                   onStatus={onStatus}
                   onPreview={onPreview}
                 />
@@ -124,7 +115,6 @@ export function App(): JSX.Element {
                 <TemplatesPanel
                   settings={settings}
                   active={view === 'templates'}
-                  onOutput={onOutput}
                   onStatus={onStatus}
                   onPreview={onPreview}
                 />
@@ -135,14 +125,12 @@ export function App(): JSX.Element {
                   <CustomLabelPanel
                     settings={settings}
                     active={view === 'custom'}
-                    onOutput={onOutput}
                     onStatus={onStatus}
                     onPreview={onPreview}
                   />
                   <RawTsplPanel
                     settings={settings}
                     active={view === 'custom'}
-                    onOutput={onOutput}
                     onStatus={onStatus}
                     onPreview={onPreview}
                   />
@@ -153,7 +141,6 @@ export function App(): JSX.Element {
                 <SettingsPanel
                   settings={settings}
                   onSaved={handleSaved}
-                  onOutput={onOutput}
                   onStatus={onStatus}
                 />
               </div>
