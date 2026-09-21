@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import { PrinterError } from '../printer/transport.js';
+import { SpecValidationError } from '../tspl/builder.js';
 import {
   StringTemplateValidationError,
   MissingVariablesError,
@@ -46,6 +47,9 @@ export function mapError(err: unknown): MappedError | null {
   }
   if (err instanceof MissingVariablesError) {
     return { status: 400, body: { error: 'MissingVariables', missing: err.missing } };
+  }
+  if (err instanceof SpecValidationError) {
+    return { status: 400, body: { error: 'SpecValidationError', issues: err.issues } };
   }
 
   // --- 404 / 409: template lookup / conflict -------------------------------
