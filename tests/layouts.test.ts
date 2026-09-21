@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTestLabelSpec } from '../src/tspl/layouts.js';
-import { buildLabel } from '../src/tspl/builder.js';
+import { buildTestLabelSpec, buildLabel } from '../src/tspl/builder.js';
 import type { LabelGeometry } from '../src/tspl/types.js';
 
 const geometry: LabelGeometry = {

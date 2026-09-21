@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   extractPlaceholders,
   renderStringTemplate,
-} from '../src/templates/render.js';
-import {
   validateStringTemplate,
   renderTemplate,
   MissingVariablesError,
@@ -28,25 +26,21 @@ describe('extractPlaceholders', () => {
 
 describe('renderStringTemplate', () => {
   it('substitutes values', () => {
-    const { tspl } = renderStringTemplate('Hello {{who}}', { who: 'world' });
-    expect(tspl).toBe('Hello world');
+    expect(renderStringTemplate('Hello {{who}}', { who: 'world' })).toBe('Hello world');
   });
 
   it('stringifies numbers and booleans', () => {
-    const { tspl } = renderStringTemplate('{{n}}-{{b}}', { n: 42, b: true });
-    expect(tspl).toBe('42-true');
+    expect(renderStringTemplate('{{n}}-{{b}}', { n: 42, b: true })).toBe('42-true');
   });
 
-  it('reports missing placeholders and renders them empty', () => {
-    const { tspl, missing } = renderStringTemplate('a{{x}}b{{y}}', { x: '1' });
-    expect(tspl).toBe('a1b');
-    expect(missing).toEqual(['y']);
+  it('renders unfilled placeholders as empty', () => {
+    expect(renderStringTemplate('a{{x}}b{{y}}', { x: '1' })).toBe('a1b');
   });
 
   it('escapes values so they cannot break out of a quoted argument', () => {
     // A malicious value with an embedded quote + CRLF + a PRINT command.
     const evil = 'X"\r\nPRINT 99,99';
-    const { tspl } = renderStringTemplate('TEXT 0,0,"3",0,1,1,"{{v}}"', { v: evil });
+    const tspl = renderStringTemplate('TEXT 0,0,"3",0,1,1,"{{v}}"', { v: evil });
     // The quote, CR and LF are stripped, so no argument break and no injected line.
     expect(tspl).toBe('TEXT 0,0,"3",0,1,1,"XPRINT 99,99"');
     expect(tspl).not.toContain('"X"');
