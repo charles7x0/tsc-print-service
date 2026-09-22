@@ -67,18 +67,19 @@ Check out the [Getting Started](#getting-started) section for full instructions.
                                   ▼
         ┌───────────────────────────────────────────────┐
         │                 HTTP layer (src/http)           │
-        │  app.ts     Express app factory + static files  │
-        │  routes.ts  /api/* endpoints                     │
-        │  schemas.ts zod request validation               │
+        │  app.ts      Express factory + error middleware │
+        │  routes/*    per-resource route modules         │
+        │  schemas.ts  zod request validation             │
+        │  errors.ts   domain error → HTTP status mapping │
         └───────────────────────────────────────────────┘
                                   │  validated request
                                   ▼
         ┌───────────────────────────────────────────────┐
         │           Templates (src/templates)             │
-        │  registry.ts  name → { schema, render }         │
-        │  defect-tag / simple-label  (data → LabelSpec)  │
+        │  string-template.ts  schemas, validation, and   │
+        │  {{placeholder}} render engine (→ raw TSPL)      │
         └───────────────────────────────────────────────┘
-                                  │  LabelSpec
+                                  │  rendered TSPL
                                   ▼
         ┌───────────────────────────────────────────────┐
         │              Service layer (src/printer)        │
@@ -88,13 +89,13 @@ Check out the [Getting Started](#getting-started) section for full instructions.
               ▼                 ▼                     ▼
    ┌────────────────┐  ┌──────────────────┐  ┌────────────────────────┐
    │ TSPL (src/tspl)│  │ DB (src/db)       │  │ Transport (src/printer)│
-   │ types.ts       │  │ database.ts       │  │ NetworkTransport (TCP) │
+   │ types.ts       │  │ database.ts (+mig)│  │ NetworkTransport (TCP) │
    │ builder.ts     │  │ settingsRepo.ts   │  │ DryRunTransport        │
-   │ layouts.ts     │  │ settings.ts (zod) │  └────────────────────────┘
-   └────────────────┘  └──────────────────┘             │
-                              │                          ▼
-                              ▼        TSC printer (TCP :9100) or TSPL to client
-                     SQLite (./data/settings.db)
+   │ (validateSpec) │  │ settings.ts (zod) │  │ PrinterError           │
+   └────────────────┘  └──────────────────┘  └────────────────────────┘
+                              │                          │
+                              ▼                          ▼
+                     SQLite (DB_PATH)     TSC printer (TCP :9100) or TSPL to client
 ```
 
 **Key design decisions:**
@@ -242,6 +243,7 @@ See [`.env.example`](./.env.example). Invalid values (e.g. a non-numeric `PORT`)
 |----------|---------|-------------|
 | `PORT` | `8080` | HTTP port |
 | `HOST` | `0.0.0.0` | Bind address (`0.0.0.0` = all interfaces, needed in Docker) |
+| `DB_PATH` | `./data/settings.db` | SQLite database file path (schema migrations run automatically on open) |
 
 ### Settings (SQLite)
 
@@ -252,6 +254,7 @@ Stored in `./data/settings.db` (created and seeded on first run). Read with `GET
 | `printer.ip` | `192.168.0.50` | Printer IP address |
 | `printer.port` | `9100` | Raw TSPL port (standard for TSC network printers) |
 | `printer.timeoutMs` | `5000` | Socket connect/write timeout |
+| `printer.lingerMs` | `500` | Milliseconds to hold the socket open after flushing a job, so the printer commits the buffer before close |
 | `printer.dryRun` | `true` | `true` returns TSPL to the client (downloaded by the UI) instead of sending to a printer |
 | `label.widthMm` | `45` | Default label width (mm) |
 | `label.heightMm` | `75` | Default label height (mm) |
@@ -279,7 +282,7 @@ Base path: `/api`. All print endpoints return `{ ok, result, tspl }`, where `tsp
 
 ```json
 {
-  "printer": { "ip": "192.168.0.50", "port": 9100, "timeoutMs": 5000, "dryRun": true },
+  "printer": { "ip": "192.168.0.50", "port": 9100, "timeoutMs": 5000, "lingerMs": 500, "dryRun": true },
   "label": { "widthMm": 45, "heightMm": 75, "gapMm": 3, "direction": 0, "mirror": 0, "dpmm": 8 }
 }
 ```
@@ -400,9 +403,10 @@ specified label, or raw TSPL command lines.
 { "commands": ["SIZE 45 mm,75 mm", "GAP 3 mm,0 mm", "CLS", "PRINT 1,1"] }
 ```
 
-**Legacy error responses:**
+**Error responses:**
 
 - `400 ValidationError` — the request body failed schema validation (`issues` lists details)
+- `400 SpecValidationError` — an element falls outside the label bounds for the current DPI (`issues` names each off-label element), caught before anything reaches the printer
 - `404 NotFound` — unknown `/api/*` route
 - `502 PrinterError` — the printer could not be reached (timeout, refused, etc.)
 
@@ -418,14 +422,13 @@ specified label, or raw TSPL command lines.
 ```
 tsc-printer-server/
 ├── src/                      # Control API (TypeScript, ES modules)
-│   ├── config.ts             # env loading + validation (PORT/HOST only)
+│   ├── config.ts             # env loading + validation (PORT/HOST/DB_PATH)
 │   ├── index.ts              # entry point (opens DB, starts server, graceful shutdown)
-│   ├── db/                   # SQLite connection, settings + templates repositories, seeds
-│   ├── http/                 # Express app factory, API routes, zod request schemas
+│   ├── db/                   # SQLite connection + migrations, settings + templates repos, seeds
+│   ├── http/                 # Express app factory, per-resource routes, schemas, error mapping
 │   ├── printer/              # service (reads settings, builds TSPL) + transports
-│   ├── templates/            # stored-template model, validation, and
-│   │                         #   {{placeholder}} rendering (string-template, render)
-│   └── tspl/                 # label/element types, TSPL builder, layout builders
+│   ├── templates/            # string-template.ts: schemas, validation, {{placeholder}} render
+│   └── tspl/                 # builder.ts (build/validate/escape + test label) + types.ts
 ├── frontend/                 # React app (Vite + TypeScript)
 │   └── src/                  # App shell, typed API client, panels (settings, test, custom, raw)
 ├── public/                   # built React bundle (generated, gitignored)
@@ -433,7 +436,7 @@ tsc-printer-server/
 ├── data/                     # SQLite database (created at runtime, gitignored)
 ├── certs/                    # optional proxy root CA for builds (gitignored, .gitkeep kept)
 ├── Dockerfile                # three-stage, multi-arch container build (node:22-alpine)
-└── .env.example              # annotated environment template (PORT/HOST)
+└── .env.example              # annotated environment template (PORT/HOST/DB_PATH)
 ```
 
 ## Tech Stack
@@ -449,7 +452,11 @@ tsc-printer-server/
 
 ## Testing
 
-Tests use **vitest**. They cover the TSPL builder, the test-label layout, env config, the SQLite settings repository (in-memory DB), the dry-run transport, and the HTTP API (via **supertest** with an injected fake transport and an in-memory database, so no printer or on-disk state is involved).
+Tests use **vitest**. They cover TSPL rendering and spec validation, template
+rendering/validation, config, the SQLite migrations and repositories (in-memory
+DB), the transport, HTTP error mapping, and the HTTP API (via **supertest** with
+an injected fake transport and an in-memory database, so no printer or on-disk
+state is involved).
 
 ```bash
 npm test          # run once
@@ -458,12 +465,17 @@ npm run test:watch
 
 ```
 tests/
-  builder.test.ts    TSPL rendering + string escaping (command-injection safe)
-  layouts.test.ts    landscape rotation and element spacing
-  config.test.ts     PORT/HOST parsing, defaults, validation errors
-  settings.test.ts   settings seed, partial update, validation, persistence
-  transport.test.ts  dry-run file writing + directory creation
-  api.test.ts        all endpoints (incl. settings), validation, 404 handling
+  builder.test.ts             TSPL rendering + string escaping (command-injection safe)
+  builder-validate.test.ts    validateSpec bounds checking against label geometry
+  layouts.test.ts             test-label geometry scaling + landscape rotation
+  template-render.test.ts     {{placeholder}} render, escaping, required-var enforcement
+  config.test.ts              PORT/HOST/DB_PATH parsing, defaults, validation errors
+  database.test.ts            schema migrations (user_version), table creation, idempotency
+  settings.test.ts            settings seed, partial update, validation, persistence
+  templatesRepository.test.ts template CRUD, seeding, validation
+  transport.test.ts           dry-run + network transport, failure paths, connection probe
+  http-errors.test.ts         domain error → HTTP status mapping
+  api.test.ts                 all endpoints (incl. settings), validation, error handling
 ```
 
 ## Troubleshooting
@@ -476,7 +488,7 @@ tests/
 | Barcode missing | Its `x`/`y` (plus rotated height) fall outside the printable area — pull it in. |
 | Nothing prints but no error | `printer.dryRun` is `true` — the TSPL was downloaded as a `.prn` file instead of sent. Set it to `false`. |
 | Settings look wrong / corrupted | Stop the server and delete `./data/settings.db`; defaults are reseeded on start. |
-| Server exits at startup | `PORT`/`HOST` is invalid; the error message names the offending variable. |
+| Server exits at startup | `PORT`/`HOST`/`DB_PATH` is invalid; the error message names the offending variable. |
 
 ## Contributing
 
