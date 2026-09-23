@@ -1,4 +1,4 @@
-import type { Settings } from '../types';
+import type { Settings } from '../lib/types';
 import type { Reachability } from '../hooks/usePrinterStatus';
 
 export type ConnectionState = 'connecting' | 'dry-run' | 'live' | 'error';

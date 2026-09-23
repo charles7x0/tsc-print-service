@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../api';
-import type { PanelProps, StringTemplate, TemplateVariable } from '../types';
-import { downloadText, makePrnFilename } from '../download';
+import { api } from '../lib/api';
+import type { PanelProps, StringTemplate, TemplateVariable } from '../lib/types';
+import { downloadText, makePrnFilename } from '../lib/download';
 import {
   extractPlaceholders,
   sampleData,
   substitutePlaceholders,
 } from '../tspl/placeholders';
-import { errorMessage, formatPrintError } from '../errors';
+import { errorMessage, formatPrintError } from '../lib/errors';
 import { useTemplates } from '../hooks/useTemplates';
 import { Card } from './Card';
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api';
-import type { PanelProps, Rotation } from '../types';
-import { downloadText, makePrnFilename } from '../download';
-import { errorMessage } from '../errors';
+import { api } from '../lib/api';
+import type { PanelProps, Rotation } from '../lib/types';
+import { downloadText, makePrnFilename } from '../lib/download';
+import { errorMessage } from '../lib/errors';
 import { Card } from './Card';
 import { Fieldset, NumberField, SelectField, TextField } from './Field';
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api';
-import type { PanelProps } from '../types';
-import { downloadText, makePrnFilename } from '../download';
-import { errorMessage } from '../errors';
+import { api } from '../lib/api';
+import type { PanelProps } from '../lib/types';
+import { downloadText, makePrnFilename } from '../lib/download';
+import { errorMessage } from '../lib/errors';
 import { Card } from './Card';
 
 const DEFAULT_TSPL = `SIZE 45 mm,75 mm

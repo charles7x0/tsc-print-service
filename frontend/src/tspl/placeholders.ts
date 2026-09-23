@@ -1,4 +1,4 @@
-import type { TemplateData, TemplateVariable } from '../types';
+import type { TemplateData, TemplateVariable } from '../lib/types';
 
 /** Matches a `{{ name }}` placeholder; captures the trimmed variable name. */
 const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
