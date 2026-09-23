@@ -492,6 +492,9 @@ tests/
 
 ## Contributing
 
+For the layered design and the patterns the codebase uses, see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 This project follows [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
