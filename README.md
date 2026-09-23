@@ -4,6 +4,8 @@
 
 <br/>
 
+<img src="images/tsc_server_logo.png" width="320" alt="TSC Printer Server logo" />
+
 ### TSC Printer Server
 
 Cross-platform HTTP server for TSC label printers — raw TSPL over TCP, no native DLL
