@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { api } from '../api';
-import type { Settings, StatusKind } from '../types';
-import { errorMessage } from '../errors';
+import { api } from '../lib/api';
+import type { Settings, StatusKind } from '../lib/types';
+import { errorMessage } from '../lib/errors';
 import { Card } from './Card';
 import { Fieldset, NumberField, SelectField, TextField } from './Field';
 

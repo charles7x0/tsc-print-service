@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
-import type { PanelProps, TemplateData } from '../types';
-import { downloadText, makePrnFilename } from '../download';
+import { api } from '../lib/api';
+import type { PanelProps, TemplateData } from '../lib/types';
+import { downloadText, makePrnFilename } from '../lib/download';
 import { substitutePlaceholders } from '../tspl/placeholders';
-import { formatPrintError } from '../errors';
+import { formatPrintError } from '../lib/errors';
 import { useTemplates } from '../hooks/useTemplates';
 import { Card } from './Card';
 

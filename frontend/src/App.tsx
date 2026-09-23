@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, ApiError } from './api';
-import type { Settings, StatusKind, ViewId } from './types';
+import { api, ApiError } from './lib/api';
+import type { Settings, StatusKind, ViewId } from './lib/types';
 import { SettingsPanel } from './components/SettingsPanel';
 import { CustomLabelPanel } from './components/CustomLabelPanel';
 import { RawTsplPanel } from './components/RawTsplPanel';

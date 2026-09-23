@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, ApiError } from '../api';
-import type { StringTemplate } from '../types';
+import { api, ApiError } from '../lib/api';
+import type { StringTemplate } from '../lib/types';
 
 export interface UseTemplates {
   templates: StringTemplate[];

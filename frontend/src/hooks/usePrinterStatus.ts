@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError } from '../api';
-import type { Settings } from '../types';
+import { api, ApiError } from '../lib/api';
+import type { Settings } from '../lib/types';
 
 /**
  * Live printer reachability, distinct from the dry-run/live *mode*.

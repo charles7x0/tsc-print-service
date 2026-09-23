@@ -1,4 +1,4 @@
-import type { ViewId } from '../types';
+import type { ViewId } from '../lib/types';
 
 interface NavItem {
   id: ViewId;
