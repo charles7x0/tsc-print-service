@@ -216,11 +216,32 @@ docker build -t tsc-printer-server .
 docker run --rm -p 8080:8080 -v tsc_data:/app/data tsc-printer-server
 ```
 
-Then set the printer via the settings API (see [Getting Started](#getting-started)). Multi-arch build:
+Then set the printer via the settings API (see [Getting Started](#getting-started)). Multi-arch build (pushed to a registry):
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t tsc-printer-server .
+docker buildx build --platform linux/amd64,linux/arm64 --push -t your-registry/tsc-printer-server:latest .
 ```
+
+### Build to a file
+
+To ship the image without a registry — e.g. to an offline or ARM device — export it to a tarball and load it on the target:
+
+```bash
+# Build and save the image to a .tar (no registry needed)
+docker buildx build --platform linux/arm64 -o type=docker,dest=tsc-printer-server.tar -t tsc-printer-server .
+
+# Transfer the file to the target machine, then load it there:
+docker load -i tsc-printer-server.tar
+```
+
+For your current machine's architecture you can also use the classic builder, which writes straight to the local image store:
+
+```bash
+docker save tsc-printer-server -o tsc-printer-server.tar   # after `docker build -t tsc-printer-server .`
+```
+
+> [!NOTE]
+> `docker buildx build` with the `docker-container` driver keeps the result in the build cache only — pass `--load` (local use), `--push` (registry), or `-o type=docker,dest=<file>.tar` (file) to get an actual image out.
 
 > [!NOTE]
 > Behind a TLS-inspection proxy (e.g. Zscaler), drop your proxy's root CA into `certs/` as a `.crt` file before building — the build trusts it via `NODE_EXTRA_CA_CERTS` and never ships it in the runtime image.
