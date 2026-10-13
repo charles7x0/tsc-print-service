@@ -35,3 +35,6 @@ tsclibnet.dll
 data
 *.log
 build-log.txt
+
+# Images buils
+tsc-print-server-v1.0.0.tar
