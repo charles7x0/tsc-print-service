@@ -170,13 +170,14 @@ describe('HTTP API', () => {
   it('GET /api/db-templates lists the seeded template', async () => {
     const res = await request(app).get('/api/db-templates');
     expect(res.status).toBe(200);
-    expect(res.body.map((t: { name: string }) => t.name)).toContain('***REMOVED***');
+    expect(res.body.map((t: { name: string }) => t.name)).toContain('simple-label');
   });
 
   it('GET /api/db-templates/:name returns the full template', async () => {
-    const res = await request(app).get('/api/db-templates/***REMOVED***');
+    const res = await request(app).get('/api/db-templates/simple-label');
     expect(res.status).toBe(200);
-    expect(res.body.source).toContain('{{id}}');
+    expect(res.body.source).toContain('{{line1}}');
+    expect(res.body.source).toContain('{{barcode}}');
     expect(res.body.variables.length).toBeGreaterThan(0);
   });
 
@@ -249,31 +250,25 @@ describe('HTTP API', () => {
 
   it('POST /api/db-templates/:name/print sends TSPL to the transport', async () => {
     const res = await request(app)
-      .post('/api/db-templates/***REMOVED***/print')
+      .post('/api/db-templates/simple-label/print')
       .send({
         data: {
-          qrData: 'AGM24V-L2',
-          id: 'AGM24V-L2',
-          timestamp: '11/09/2026 10:15:32',
-          footer: '***REMOVED***',
-          ***REMOVED***,
-          ***REMOVED***,
-          ***REMOVED***,
-          ***REMOVED***,
-          ***REMOVED***,
-          ***REMOVED***,
+          line1: 'Hello',
+          line2: 'World',
+          line3: 'Line three',
+          barcode: '123456',
         },
       });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    expect(fake.lastTspl).toContain('***REMOVED***');
-    expect(fake.lastTspl).toContain('"***REMOVED***"');
+    expect(fake.lastTspl).toContain('BARCODE 20,150,"128",80,1,0,2,4,"123456"');
+    expect(fake.lastTspl).toContain('TEXT 20,20,"3",0,1,1,"Hello"');
   });
 
   it('POST /api/db-templates/:name/print returns 400 when required vars are missing', async () => {
     const res = await request(app)
-      .post('/api/db-templates/***REMOVED***/print')
-      .send({ data: { id: 'only-id' } });
+      .post('/api/db-templates/simple-label/print')
+      .send({ data: { line2: 'World' } });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('MissingVariables');
     expect(res.body.missing.length).toBeGreaterThan(0);

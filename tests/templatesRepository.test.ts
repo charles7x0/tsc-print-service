@@ -11,8 +11,6 @@ import {
   type CreateTemplateInput,
 } from '../src/templates/string-template.js';
 
-const SEED_NAME = '***REMOVED***';
-
 /** A minimal valid template used across create/update tests. */
 function validInput(name: string): CreateTemplateInput {
   return {
@@ -23,50 +21,6 @@ function validInput(name: string): CreateTemplateInput {
     geometry: { widthMm: 45, heightMm: 75, dpmm: 8 },
   };
 }
-
-/** The data that reproduces the approved reference label. */
-const ***REMOVED***: Record<string, string> = {
-  qrData: 'AGM24V-L2',
-  id: 'AGM24V-L2',
-  timestamp: '11/09/2026 10:15:32',
-  footer: '***REMOVED***',
-  ***REMOVED***,
-  ***REMOVED***,
-  ***REMOVED***,
-  ***REMOVED***,
-  ***REMOVED***,
-  ***REMOVED***,
-};
-
-/** The exact approved raw TSPL (shifted-left layout, cell-7 QR). */
-const ***REMOVED*** = [
-  'SIZE 45 mm,75 mm',
-  'GAP 3 mm,0 mm',
-  'DIRECTION 1,0',
-  'REFERENCE 0,0',
-  'CLS',
-  'CODEPAGE UTF-8',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  '***REMOVED***',
-  'TEXT 40,40,"1",90,1,1,"***REMOVED***"',
-  'PRINT 1,1',
-].join('\n');
 
 describe('TemplatesRepository', () => {
   let db: Db;
@@ -81,10 +35,10 @@ describe('TemplatesRepository', () => {
     db.close();
   });
 
-  it('seeds the built-in defect template into a fresh database', () => {
-    expect(repo.has(SEED_NAME)).toBe(true);
+  it('seeds the built-in template into a fresh database', () => {
+    expect(repo.has('simple-label')).toBe(true);
     const names = repo.list().map((t) => t.name);
-    expect(names).toContain(SEED_NAME);
+    expect(names).toContain('simple-label');
   });
 
   it('seeds the simple-label template (replacement for the former code template)', () => {
@@ -95,15 +49,9 @@ describe('TemplatesRepository', () => {
     expect(tspl).toContain('BARCODE');
   });
 
-  it('renders the seeded template to the approved raw TSPL exactly', () => {
-    const template = repo.get(SEED_NAME);
-    const tspl = renderTemplate(template, ***REMOVED***).replace(/\r\n/g, '\n').trim();
-    expect(tspl).toBe(***REMOVED***);
-  });
-
   it('renders with CRLF line endings and a trailing CRLF (required by TSPL)', () => {
-    const template = repo.get(SEED_NAME);
-    const tspl = renderTemplate(template, ***REMOVED***);
+    const template = repo.get('simple-label');
+    const tspl = renderTemplate(template, { line1: 'Hello', barcode: '123456' });
     expect(tspl.includes('\r\n')).toBe(true);
     // Every line break must be CRLF — no bare LFs.
     expect(/[^\r]\n/.test(tspl)).toBe(false);
@@ -111,8 +59,8 @@ describe('TemplatesRepository', () => {
   });
 
   it('gets a template by name', () => {
-    const t = repo.get(SEED_NAME);
-    expect(t.name).toBe(SEED_NAME);
+    const t = repo.get('simple-label');
+    expect(t.name).toBe('simple-label');
     expect(t.variables.length).toBeGreaterThan(0);
     expect(t.geometry.widthMm).toBe(45);
   });
@@ -198,7 +146,7 @@ describe('TemplatesRepository construction', () => {
   it('create() seeds built-in templates', () => {
     const db = openDatabase(':memory:');
     const repo = TemplatesRepository.create(db);
-    expect(repo.has(SEED_NAME)).toBe(true);
+    expect(repo.has('simple-label')).toBe(true);
     db.close();
   });
 });
